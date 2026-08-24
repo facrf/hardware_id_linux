@@ -1,4 +1,5 @@
 #include "collectors.h"
+#include "sha256.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,9 @@
 #include <ctype.h>
 #include <pwd.h>
 #include <time.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 // Remove espaços e quebras de linha no início e fim da string
 void trim_string(char *str) {
@@ -153,6 +157,79 @@ void collect_system_info(SysInfo *info) {
 #else
     snprintf(info->compiler, sizeof(info->compiler), "Desconhecido");
 #endif
+}
+
+// Coleta identificadores de hardware, DMI/SMBIOS e gera a impressão digital (Hardware Fingerprint)
+void collect_hardware_id_info(HardwareIdInfo *info, const CpuInfo *cpu, const NetInfo *net) {
+    memset(info, 0, sizeof(*info));
+
+    // 1. DMI / SMBIOS (/sys/class/dmi/id/)
+    safe_read_file("/sys/class/dmi/id/sys_vendor", info->sys_vendor, sizeof(info->sys_vendor));
+    safe_read_file("/sys/class/dmi/id/product_name", info->product_name, sizeof(info->product_name));
+    safe_read_file("/sys/class/dmi/id/product_version", info->product_version, sizeof(info->product_version));
+    safe_read_file("/sys/class/dmi/id/product_uuid", info->product_uuid, sizeof(info->product_uuid));
+    safe_read_file("/sys/class/dmi/id/board_vendor", info->board_vendor, sizeof(info->board_vendor));
+    safe_read_file("/sys/class/dmi/id/board_name", info->board_name, sizeof(info->board_name));
+    safe_read_file("/sys/class/dmi/id/bios_vendor", info->bios_vendor, sizeof(info->bios_vendor));
+    safe_read_file("/sys/class/dmi/id/bios_version", info->bios_version, sizeof(info->bios_version));
+    safe_read_file("/sys/class/dmi/id/bios_date", info->bios_date, sizeof(info->bios_date));
+
+    if (!info->sys_vendor[0]) snprintf(info->sys_vendor, sizeof(info->sys_vendor), "Desconhecido");
+    if (!info->product_name[0]) snprintf(info->product_name, sizeof(info->product_name), "Desconhecido");
+    if (!info->board_vendor[0]) snprintf(info->board_vendor, sizeof(info->board_vendor), "Desconhecido");
+    if (!info->board_name[0]) snprintf(info->board_name, sizeof(info->board_name), "Desconhecido");
+    if (!info->bios_vendor[0]) snprintf(info->bios_vendor, sizeof(info->bios_vendor), "Desconhecido");
+    if (!info->bios_version[0]) snprintf(info->bios_version, sizeof(info->bios_version), "Desconhecido");
+    if (!info->bios_date[0]) snprintf(info->bios_date, sizeof(info->bios_date), "Desconhecido");
+
+    // 2. Machine ID do Sistema (/etc/machine-id)
+    safe_read_file("/etc/machine-id", info->machine_id, sizeof(info->machine_id));
+    if (!info->machine_id[0]) {
+        safe_read_file("/var/lib/dbus/machine-id", info->machine_id, sizeof(info->machine_id));
+    }
+    if (!info->machine_id[0]) {
+        snprintf(info->machine_id, sizeof(info->machine_id), "Desconhecido");
+    }
+
+    // 3. MAC Address Físico Principal
+    const char *primary_mac = "00:00:00:00:00:00";
+    if (net) {
+        for (int i = 0; i < net->count; i++) {
+            if (!net->interfaces[i].is_virtual && net->interfaces[i].mac[0] &&
+                strcmp(net->interfaces[i].mac, "00:00:00:00:00:00") != 0) {
+                primary_mac = net->interfaces[i].mac;
+                break;
+            }
+        }
+    }
+
+    // 4. Constrói a semente canônica para o Hardware Fingerprint
+    char seed[1024];
+    snprintf(seed, sizeof(seed), "CPU:%s|CORES:%d|DMI_SYS:%s|DMI_PROD:%s|DMI_BOARD:%s|MID:%s|MAC:%s|UUID:%s",
+             cpu ? cpu->model : "unknown",
+             cpu ? cpu->physical_cores : 0,
+             info->sys_vendor,
+             info->product_name,
+             info->board_name,
+             info->machine_id,
+             primary_mac,
+             info->product_uuid[0] ? info->product_uuid : "none");
+
+    // 5. Calcula o hash criptográfico SHA-256
+    sha256_string(seed, info->hardware_id);
+
+    // 6. UUID Canônico Formatado
+    if (info->product_uuid[0] && strlen(info->product_uuid) >= 32) {
+        snprintf(info->formatted_uuid, sizeof(info->formatted_uuid), "%s", info->product_uuid);
+    } else {
+        snprintf(info->formatted_uuid, sizeof(info->formatted_uuid),
+                 "%.8s-%.4s-%.4s-%.4s-%.12s",
+                 info->hardware_id,
+                 info->hardware_id + 8,
+                 info->hardware_id + 12,
+                 info->hardware_id + 16,
+                 info->hardware_id + 20);
+    }
 }
 
 // Estrutura auxiliar para cálculo de uso de CPU
@@ -364,6 +441,43 @@ void collect_memory_info(MemInfo *info) {
     if (info->swap_total_kb > 0) {
         info->swap_usage_percent = 100.0 * (double)info->swap_used_kb / (double)info->swap_total_kb;
     }
+
+    /* ─── Coleta dispositivos swap individuais de /proc/swaps ─── */
+    info->swap_count = 0;
+    FILE *sf = fopen("/proc/swaps", "r");
+    if (sf) {
+        char sline[512];
+        /* Pula o cabeçalho */
+        if (fgets(sline, sizeof(sline), sf)) {
+            while (fgets(sline, sizeof(sline), sf) && info->swap_count < MAX_SWAPS) {
+                SwapEntry *se = &info->swaps[info->swap_count];
+                char dev[128], type[32];
+                unsigned long long size_val = 0, used_val = 0;
+                int prio = 0;
+
+                if (sscanf(sline, "%127s %31s %llu %llu %d", dev, type, &size_val, &used_val, &prio) >= 3) {
+                    snprintf(se->device, sizeof(se->device), "%s", dev);
+                    se->size_kb = size_val;
+                    se->used_kb = used_val;
+                    se->priority = prio;
+
+                    /* Identifica o tipo real do swap */
+                    if (strstr(dev, "zram") != NULL) {
+                        snprintf(se->type, sizeof(se->type), "zram");
+                    } else if (strcmp(type, "partition") == 0) {
+                        snprintf(se->type, sizeof(se->type), "partition");
+                    } else if (strcmp(type, "file") == 0) {
+                        snprintf(se->type, sizeof(se->type), "file");
+                    } else {
+                        snprintf(se->type, sizeof(se->type), "%s", type);
+                    }
+
+                    info->swap_count++;
+                }
+            }
+        }
+        fclose(sf);
+    }
 }
 
 // Coleta informações sobre as GPUs do sistema utilizando sysfs
@@ -438,10 +552,10 @@ void collect_disk_info(DiskInfo *info) {
     while ((dir = readdir(d)) != NULL) {
         if (dir->d_name[0] == '.') continue;
         const char *dn = dir->d_name;
-        // Ignora dispositivos de bloco virtuais ou não relevantes
+        // Ignora dispositivos de bloco virtuais ou não relevantes (incluindo zram e loop)
         if (strncmp(dn, "loop", 4) == 0 || strncmp(dn, "ram", 3) == 0 ||
             strncmp(dn, "dm-", 3) == 0 || strncmp(dn, "sr", 2) == 0 ||
-            strncmp(dn, "fd", 2) == 0) {
+            strncmp(dn, "fd", 2) == 0 || strncmp(dn, "zram", 4) == 0) {
             continue;
         }
 
@@ -524,4 +638,232 @@ void collect_mount_info(MountInfo *info) {
         }
     }
     fclose(f);
+}
+
+// Coleta informações sobre interfaces de rede do sistema via /sys/class/net e getifaddrs
+void collect_net_info(NetInfo *info) {
+    memset(info, 0, sizeof(*info));
+    DIR *d = opendir("/sys/class/net");
+    if (!d) return;
+
+    struct dirent *dir;
+    while ((dir = readdir(d)) != NULL) {
+        if (dir->d_name[0] == '.') continue;
+        if (info->count >= MAX_NETS) break;
+
+        NetEntry *net = &info->interfaces[info->count];
+        snprintf(net->name, sizeof(net->name), "%s", dir->d_name);
+
+        /* MAC Address */
+        char path[512], buf[256];
+        snprintf(path, sizeof(path), "/sys/class/net/%s/address", dir->d_name);
+        safe_read_file(path, net->mac, sizeof(net->mac));
+        if (!net->mac[0]) snprintf(net->mac, sizeof(net->mac), "00:00:00:00:00:00");
+
+        /* Estado operacional */
+        snprintf(path, sizeof(path), "/sys/class/net/%s/operstate", dir->d_name);
+        safe_read_file(path, net->state, sizeof(net->state));
+        if (!net->state[0]) snprintf(net->state, sizeof(net->state), "unknown");
+
+        /* Verifica se é wireless (existência de /sys/class/net/<iface>/wireless ou phy80211) */
+        snprintf(path, sizeof(path), "/sys/class/net/%s/wireless", dir->d_name);
+        if (access(path, F_OK) == 0) {
+            net->is_wireless = 1;
+        } else {
+            snprintf(path, sizeof(path), "/sys/class/net/%s/phy80211", dir->d_name);
+            net->is_wireless = (access(path, F_OK) == 0) ? 1 : 0;
+        }
+
+        /* Classifica se é virtual */
+        if (strcmp(dir->d_name, "lo") == 0 ||
+            strncmp(dir->d_name, "veth", 4) == 0 ||
+            strncmp(dir->d_name, "br-", 3) == 0 ||
+            strncmp(dir->d_name, "docker", 6) == 0 ||
+            strncmp(dir->d_name, "virbr", 5) == 0 ||
+            strncmp(dir->d_name, "dummy", 5) == 0) {
+            net->is_virtual = 1;
+        } else {
+            char dev_link[512];
+            snprintf(dev_link, sizeof(dev_link), "/sys/class/net/%s/device", dir->d_name);
+            net->is_virtual = (access(dev_link, F_OK) != 0);
+        }
+
+        /* Tipo da interface */
+        snprintf(path, sizeof(path), "/sys/class/net/%s/type", dir->d_name);
+        safe_read_file(path, buf, sizeof(buf));
+        int if_type = buf[0] ? atoi(buf) : -1;
+
+        if (strcmp(dir->d_name, "lo") == 0) {
+            snprintf(net->type_desc, sizeof(net->type_desc), "Loopback");
+        } else if (net->is_wireless) {
+            snprintf(net->type_desc, sizeof(net->type_desc), "Wi-Fi");
+        } else if (if_type == 1) {
+            snprintf(path, sizeof(path), "/sys/class/net/%s/bridge", dir->d_name);
+            if (access(path, F_OK) == 0) {
+                snprintf(net->type_desc, sizeof(net->type_desc), "Bridge");
+            } else if (!net->is_virtual) {
+                snprintf(net->type_desc, sizeof(net->type_desc), "Ethernet");
+            } else {
+                snprintf(net->type_desc, sizeof(net->type_desc), "Virtual");
+            }
+        } else if (if_type == 772) {
+            snprintf(net->type_desc, sizeof(net->type_desc), "Loopback");
+        } else {
+            snprintf(net->type_desc, sizeof(net->type_desc), "Outro (%d)", if_type);
+        }
+
+        /* Driver — segue o symlink /sys/class/net/<iface>/device/driver */
+        snprintf(path, sizeof(path), "/sys/class/net/%s/device/driver", dir->d_name);
+        char driver_target[512];
+        ssize_t len = readlink(path, driver_target, sizeof(driver_target) - 1);
+        if (len != -1) {
+            driver_target[len] = '\0';
+            char *basename_ptr = strrchr(driver_target, '/');
+            if (basename_ptr)
+                snprintf(net->driver, sizeof(net->driver), "%s", basename_ptr + 1);
+            else
+                snprintf(net->driver, sizeof(net->driver), "%s", driver_target);
+        } else {
+            snprintf(net->driver, sizeof(net->driver), "N/A");
+        }
+
+        /* Velocidade do link (Mbps) */
+        snprintf(path, sizeof(path), "/sys/class/net/%s/speed", dir->d_name);
+        safe_read_file(path, buf, sizeof(buf));
+        if (buf[0] && atoi(buf) > 0) {
+            net->speed_mbps = (unsigned long long)atoi(buf);
+        } else {
+            net->speed_mbps = 0;
+        }
+
+        net->ipv4[0] = '\0';
+        net->ipv6[0] = '\0';
+
+        info->count++;
+    }
+    closedir(d);
+
+    /* Coleta endereços IPv4 e IPv6 atribuídos para cada interface via getifaddrs */
+    struct ifaddrs *ifaddr = NULL, *ifa = NULL;
+    if (getifaddrs(&ifaddr) != -1) {
+        for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+            if (!ifa->ifa_name || !ifa->ifa_addr) continue;
+
+            // Procura a interface correspondente na struct
+            for (int i = 0; i < info->count; i++) {
+                NetEntry *net = &info->interfaces[i];
+                if (strcmp(net->name, ifa->ifa_name) != 0) continue;
+
+                int family = ifa->ifa_addr->sa_family;
+                if (family == AF_INET && net->ipv4[0] == '\0') {
+                    char ip[INET_ADDRSTRLEN];
+                    struct sockaddr_in *p = (struct sockaddr_in *)ifa->ifa_addr;
+                    if (inet_ntop(AF_INET, &p->sin_addr, ip, sizeof(ip))) {
+                        // Calcula máscara CIDR se disponível
+                        if (ifa->ifa_netmask) {
+                            struct sockaddr_in *m = (struct sockaddr_in *)ifa->ifa_netmask;
+                            uint32_t mask = ntohl(m->sin_addr.s_addr);
+                            int cidr = 0;
+                            while (mask) {
+                                cidr += (mask & 1);
+                                mask >>= 1;
+                            }
+                            snprintf(net->ipv4, sizeof(net->ipv4), "%s/%d", ip, cidr);
+                        } else {
+                            snprintf(net->ipv4, sizeof(net->ipv4), "%s", ip);
+                        }
+                    }
+                } else if (family == AF_INET6) {
+                    char ip6[INET6_ADDRSTRLEN];
+                    struct sockaddr_in6 *p6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+                    if (inet_ntop(AF_INET6, &p6->sin6_addr, ip6, sizeof(ip6))) {
+                        // Prefere endereço IPv6 não link-local se já tivermos um
+                        if (net->ipv6[0] == '\0' || strncmp(net->ipv6, "fe80", 4) == 0) {
+                            snprintf(net->ipv6, sizeof(net->ipv6), "%s", ip6);
+                        }
+                    }
+                }
+            }
+        }
+        freeifaddrs(ifaddr);
+    }
+}
+
+// Coleta informações sobre adaptadores Bluetooth via /sys/class/bluetooth
+void collect_bt_info(BtInfo *info) {
+    memset(info, 0, sizeof(*info));
+    DIR *d = opendir("/sys/class/bluetooth");
+    if (!d) return;
+
+    struct dirent *dir;
+    while ((dir = readdir(d)) != NULL) {
+        if (dir->d_name[0] == '.') continue;
+        if (info->count >= MAX_BT) break;
+
+        BtEntry *bt = &info->adapters[info->count];
+        snprintf(bt->name, sizeof(bt->name), "%s", dir->d_name);
+
+        /* Endereço Bluetooth */
+        char path[512], buf[256];
+        snprintf(path, sizeof(path), "/sys/class/bluetooth/%s/address", dir->d_name);
+        safe_read_file(path, bt->address, sizeof(bt->address));
+        if (!bt->address[0]) snprintf(bt->address, sizeof(bt->address), "N/A");
+
+        /* Tipo (USB, UART, etc.) — checa o barramento do device */
+        snprintf(path, sizeof(path), "/sys/class/bluetooth/%s/device/subsystem", dir->d_name);
+        char subsys_target[512];
+        ssize_t len = readlink(path, subsys_target, sizeof(subsys_target) - 1);
+        if (len != -1) {
+            subsys_target[len] = '\0';
+            char *base = strrchr(subsys_target, '/');
+            if (base) {
+                base++;
+                if (strcmp(base, "usb") == 0)
+                    snprintf(bt->type_desc, sizeof(bt->type_desc), "USB");
+                else if (strcmp(base, "sdio") == 0)
+                    snprintf(bt->type_desc, sizeof(bt->type_desc), "SDIO");
+                else if (strcmp(base, "serial") == 0 || strcmp(base, "platform") == 0)
+                    snprintf(bt->type_desc, sizeof(bt->type_desc), "UART");
+                else
+                    snprintf(bt->type_desc, sizeof(bt->type_desc), "%s", base);
+            } else {
+                snprintf(bt->type_desc, sizeof(bt->type_desc), "Desconhecido");
+            }
+        } else {
+            snprintf(bt->type_desc, sizeof(bt->type_desc), "Desconhecido");
+        }
+
+        /* Driver */
+        snprintf(path, sizeof(path), "/sys/class/bluetooth/%s/device/driver", dir->d_name);
+        char drv_target[512];
+        len = readlink(path, drv_target, sizeof(drv_target) - 1);
+        if (len != -1) {
+            drv_target[len] = '\0';
+            char *base = strrchr(drv_target, '/');
+            if (base)
+                snprintf(bt->driver, sizeof(bt->driver), "%s", base + 1);
+            else
+                snprintf(bt->driver, sizeof(bt->driver), "%s", drv_target);
+        } else {
+            snprintf(bt->driver, sizeof(bt->driver), "N/A");
+        }
+
+        /* Fabricante (via /sys/class/bluetooth/<hci>/device/../manufacturer ou product) */
+        snprintf(path, sizeof(path), "/sys/class/bluetooth/%s/device/../product", dir->d_name);
+        safe_read_file(path, buf, sizeof(buf));
+        if (buf[0]) {
+            snprintf(bt->manufacturer, sizeof(bt->manufacturer), "%s", buf);
+        } else {
+            snprintf(path, sizeof(path), "/sys/class/bluetooth/%s/device/../manufacturer", dir->d_name);
+            safe_read_file(path, buf, sizeof(buf));
+            if (buf[0]) {
+                snprintf(bt->manufacturer, sizeof(bt->manufacturer), "%s", buf);
+            } else {
+                snprintf(bt->manufacturer, sizeof(bt->manufacturer), "Desconhecido");
+            }
+        }
+
+        info->count++;
+    }
+    closedir(d);
 }

@@ -146,6 +146,28 @@ void display_header(int width) {
     draw_box_bottom(width);
 }
 
+void display_hardware_id_panel(const HardwareIdInfo *info, int width) {
+    draw_box_top("🔑 Identificação Única & Placa-Mãe (DMI)", width);
+
+    draw_kv("Hardware ID", info->hardware_id, width);
+    draw_kv("Machine UUID", info->formatted_uuid, width);
+    draw_kv("Machine ID", info->machine_id, width);
+
+    char mobo[256];
+    snprintf(mobo, sizeof(mobo), "%s %s", info->board_vendor, info->board_name);
+    draw_kv("Placa-Mãe", mobo, width);
+
+    char sys_prod[256];
+    snprintf(sys_prod, sizeof(sys_prod), "%s %s (%s)", info->sys_vendor, info->product_name, info->product_version);
+    draw_kv("Sistema/Chassis", sys_prod, width);
+
+    char bios[256];
+    snprintf(bios, sizeof(bios), "%s v%s (%s)", info->bios_vendor, info->bios_version, info->bios_date);
+    draw_kv("BIOS / UEFI", bios, width);
+
+    draw_box_bottom(width);
+}
+
 void display_system_panel(const SysInfo *info, int width) {
     draw_box_top(" Sistema Operacional", width);
     
@@ -256,6 +278,22 @@ void display_memory_panel(const MemInfo *info, int width) {
     char swap_stats[256];
     snprintf(swap_stats, sizeof(swap_stats), "Total: %s | Usada: %s | Livre: %s", buf_stotal, buf_sused, buf_sfree);
     draw_kv("Status Swap", swap_stats, width);
+
+    /* Exibe cada dispositivo swap com seu tipo */
+    for (int i = 0; i < info->swap_count; i++) {
+        char s_size[32], s_used[32];
+        format_kb(info->swaps[i].size_kb, s_size, sizeof(s_size));
+        format_kb(info->swaps[i].used_kb, s_used, sizeof(s_used));
+
+        char swap_dev_info[256];
+        snprintf(swap_dev_info, sizeof(swap_dev_info), "[%s] %s (Usado: %s, Prio: %d)",
+                 info->swaps[i].type, s_size, s_used, info->swaps[i].priority);
+        draw_kv(info->swaps[i].device, swap_dev_info, width);
+    }
+    if (info->swap_count == 0 && info->swap_total_kb == 0) {
+        draw_kv("Tipo Swap", "Nenhum swap configurado", width);
+    }
+
     draw_progress_bar("Uso Swap", info->swap_usage_percent, width);
     
     draw_box_bottom(width);
@@ -310,6 +348,102 @@ void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int w
         draw_progress_bar(lbl, mounts->mounts[i].usage_percent, width);
     }
     
+    draw_box_bottom(width);
+}
+
+void display_network_panel(const NetInfo *net, const BtInfo *bt, int width) {
+    draw_box_top(" Rede & Conectividade", width);
+
+    /* ─── Interfaces de Rede ─── */
+    draw_kv("=== Interfaces de Rede ===", "", width);
+
+    if (net->count == 0) {
+        draw_kv("Status", "Nenhuma interface detectada", width);
+    } else {
+        /* Conta interfaces físicas vs virtuais */
+        int phys_count = 0, virt_count = 0;
+        for (int i = 0; i < net->count; i++) {
+            if (!net->interfaces[i].is_virtual) phys_count++;
+            else virt_count++;
+        }
+
+        /* 1. Interfaces Físicas & Wi-Fi */
+        for (int i = 0; i < net->count; i++) {
+            const NetEntry *iface = &net->interfaces[i];
+            if (iface->is_virtual && strcmp(iface->name, "lo") != 0) continue;
+
+            char main_info[256];
+            if (iface->speed_mbps > 0) {
+                snprintf(main_info, sizeof(main_info), "%s [%s] %s (%llu Mbps)",
+                         iface->type_desc, iface->state, iface->mac, iface->speed_mbps);
+            } else {
+                snprintf(main_info, sizeof(main_info), "%s [%s] %s",
+                         iface->type_desc, iface->state, iface->mac);
+            }
+            draw_kv(iface->name, main_info, width);
+
+            /* Linha com IP e Driver */
+            char details[256];
+            if (iface->ipv4[0] && iface->ipv6[0]) {
+                snprintf(details, sizeof(details), "IP: %s | %s | Driver: %s", iface->ipv4, iface->ipv6, iface->driver);
+            } else if (iface->ipv4[0]) {
+                snprintf(details, sizeof(details), "IP: %s | Driver: %s", iface->ipv4, iface->driver);
+            } else {
+                snprintf(details, sizeof(details), "Driver: %s", iface->driver);
+            }
+            draw_kv("", details, width);
+
+            if (i < net->count - 1 && (phys_count > 1 || virt_count > 0)) {
+                draw_separator(width);
+            }
+        }
+
+        /* 2. Interfaces Virtuais / Pontes / Docker */
+        int printed_virt = 0;
+        for (int i = 0; i < net->count; i++) {
+            const NetEntry *iface = &net->interfaces[i];
+            if (!iface->is_virtual || strcmp(iface->name, "lo") == 0) continue;
+
+            // Se houver mais de 6 interfaces virtuais, lista as 5 primeiras e resume o restante
+            if (virt_count > 6 && printed_virt >= 5) {
+                char sum_buf[128];
+                snprintf(sum_buf, sizeof(sum_buf), "+ %d outras interfaces virtuais ativas...", virt_count - printed_virt);
+                draw_kv("Virtuais (Docker)", sum_buf, width);
+                break;
+            }
+
+            char main_info[256];
+            if (iface->ipv4[0]) {
+                snprintf(main_info, sizeof(main_info), "%s [%s] %s (IP: %s)",
+                         iface->type_desc, iface->state, iface->mac, iface->ipv4);
+            } else {
+                snprintf(main_info, sizeof(main_info), "%s [%s] %s",
+                         iface->type_desc, iface->state, iface->mac);
+            }
+            draw_kv(iface->name, main_info, width);
+            printed_virt++;
+        }
+    }
+
+    /* ─── Bluetooth ─── */
+    if (bt->count > 0) {
+        draw_separator(width);
+        draw_kv("=== Bluetooth ===", "", width);
+
+        for (int i = 0; i < bt->count; i++) {
+            const BtEntry *adapter = &bt->adapters[i];
+
+            char bt_info[256];
+            snprintf(bt_info, sizeof(bt_info), "[%s] %s (%s)",
+                     adapter->type_desc, adapter->address, adapter->manufacturer);
+            draw_kv(adapter->name, bt_info, width);
+
+            char bt_drv[128];
+            snprintf(bt_drv, sizeof(bt_drv), "Driver: %s", adapter->driver);
+            draw_kv("", bt_drv, width);
+        }
+    }
+
     draw_box_bottom(width);
 }
 

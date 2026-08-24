@@ -10,7 +10,7 @@ BUILD_DIR = build
 TARGET = hardware_id
 
 # Fontes e objetos
-SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/collectors.c $(SRC_DIR)/display.c
+SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/collectors.c $(SRC_DIR)/display.c $(SRC_DIR)/sha256.c $(SRC_DIR)/json_export.c
 OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Alvo padrão
@@ -36,7 +36,7 @@ clean:
 
 # Regra para compilar com opções de debug
 .PHONY: debug
-debug: CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -g -O0 -fsanitize=address -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
+debug: CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Wno-format-truncation -g -O0 -fsanitize=address -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
 debug: clean all
 
 # Regra para instalação

@@ -15,6 +15,9 @@
 #define MAX_GPUS    8
 #define MAX_DISKS   32
 #define MAX_MOUNTS  64
+#define MAX_SWAPS   16
+#define MAX_NETS    32
+#define MAX_BT      16
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Estruturas de Dados
@@ -35,6 +38,22 @@ typedef struct {
     char compiler[128];
 } SysInfo;
 
+/* ─── Informações de Identificação Única e Placa-Mãe (DMI/SMBIOS) ─── */
+typedef struct {
+    char sys_vendor[128];      /* Fabricante do Sistema (ex.: Dell, Lenovo, ASUS) */
+    char product_name[128];    /* Modelo do Produto */
+    char product_version[64];  /* Versão do Produto */
+    char product_uuid[64];     /* UUID DMI (se com root) */
+    char board_vendor[128];    /* Fabricante da Placa-Mãe */
+    char board_name[128];      /* Modelo da Placa-Mãe */
+    char bios_vendor[128];     /* Fabricante da BIOS/UEFI */
+    char bios_version[64];     /* Versão da BIOS */
+    char bios_date[32];        /* Data da BIOS */
+    char machine_id[64];       /* /etc/machine-id */
+    char hardware_id[65];      /* SHA-256 Hash único da impressão digital de hardware */
+    char formatted_uuid[64];   /* UUID canônico sintético/DMI */
+} HardwareIdInfo;
+
 /* ─── Informações do Processador (CPU) ─── */
 typedef struct {
     char model[256];
@@ -52,6 +71,15 @@ typedef struct {
     int  num_cores_sampled;
 } CpuInfo;
 
+/* ─── Entrada de dispositivo Swap individual ─── */
+typedef struct {
+    char device[128];          /* ex.: /dev/zram0, /dev/sda2, /swapfile */
+    char type[32];             /* partition, file, zram */
+    int  priority;
+    unsigned long long size_kb;
+    unsigned long long used_kb;
+} SwapEntry;
+
 /* ─── Informações de Memória RAM e Swap ─── */
 typedef struct {
     unsigned long long total_kb;
@@ -65,6 +93,8 @@ typedef struct {
     unsigned long long swap_used_kb;     /* calculado: swap_total - swap_free */
     double ram_usage_percent;
     double swap_usage_percent;
+    SwapEntry swaps[MAX_SWAPS];
+    int swap_count;
 } MemInfo;
 
 /* ─── Informações de GPU (uma entrada por placa) ─── */
@@ -108,17 +138,53 @@ typedef struct {
     int count;
 } MountInfo;
 
+/* ─── Informações de Interface de Rede ─── */
+typedef struct {
+    char name[32];             /* ex.: eth0, wlan0, enp3s0 */
+    char driver[64];           /* ex.: e1000e, iwlwifi, r8169 */
+    char mac[20];              /* endereço MAC */
+    char ipv4[64];             /* endereço IPv4 principal com máscara */
+    char ipv6[64];             /* endereço IPv6 principal */
+    char state[16];            /* up, down, unknown */
+    char type_desc[32];        /* Ethernet, Wi-Fi, Loopback, Virtual, Bridge */
+    int  is_wireless;
+    int  is_virtual;           /* 1 se for loopback, veth, bridge, docker, etc. */
+    unsigned long long speed_mbps; /* velocidade do link em Mbps (0 se indisponível) */
+} NetEntry;
+
+typedef struct {
+    NetEntry interfaces[MAX_NETS];
+    int count;
+} NetInfo;
+
+/* ─── Informações de Bluetooth ─── */
+typedef struct {
+    char name[64];             /* ex.: hci0 */
+    char address[20];          /* endereço Bluetooth */
+    char type_desc[32];        /* ex.: USB, UART */
+    char driver[64];           /* driver do controlador */
+    char manufacturer[64];     /* fabricante (se disponível) */
+} BtEntry;
+
+typedef struct {
+    BtEntry adapters[MAX_BT];
+    int count;
+} BtInfo;
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Funções de Coleta — cada uma popula a struct correspondente
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 void collect_system_info(SysInfo *info);
+void collect_hardware_id_info(HardwareIdInfo *info, const CpuInfo *cpu, const NetInfo *net);
 void collect_cpu_info(CpuInfo *info);
 void collect_memory_info(MemInfo *info);
 void collect_gpu_info(GpuInfo *info);
 void collect_disk_info(DiskInfo *info);
 void collect_mount_info(MountInfo *info);
+void collect_net_info(NetInfo *info);
+void collect_bt_info(BtInfo *info);
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
