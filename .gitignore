@@ -1,0 +1,83 @@
+# Binários e executáveis compilados
+/hardware_id
+*.exe
+*.out
+*.app
+bin/
+dist/
+out/
+build/
+obj/
+cmake-build-*/
+
+# Arquivos de objetos e bibliotecas
+*.o
+*.obj
+*.a
+*.la
+*.lai
+*.so
+*.dylib
+*.dll
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+.venv/
+venv/
+ENV/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Web (se aplicável)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# CMake e ferramentas de build
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile.cmake
+
+# Logs, depuração e arquivos temporários
+*.log
+*.tmp
+*.temp
+scratch/
+.cache/
+*.dSYM/
+*.su
+*.idb
+*.pdb
+gmon.out
+core
+core.*
+vgcore.*
+
+# Variáveis de ambiente e segredos
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# IDEs e Editores
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
