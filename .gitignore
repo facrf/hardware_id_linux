@@ -54,6 +54,9 @@ Makefile.cmake
 *.tmp
 *.temp
 scratch/
+/tests/test_sha256
+/tests/test_collectors
+/tests/test_json
 .cache/
 *.dSYM/
 *.su

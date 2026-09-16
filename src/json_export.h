@@ -20,6 +20,7 @@ void export_json(FILE *out,
                  const DiskInfo *disks,
                  const MountInfo *mounts,
                  const NetInfo *net,
-                 const BtInfo *bt);
+                 const BtInfo *bt,
+                 int include_identifiers);
 
 #endif /* JSON_EXPORT_H */

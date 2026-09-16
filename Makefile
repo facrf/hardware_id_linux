@@ -8,6 +8,8 @@ BUILD_DIR = build
 
 # Nome do executável
 TARGET = hardware_id
+PREFIX ?= /usr/local
+DESTDIR ?=
 
 # Fontes e objetos
 SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/collectors.c $(SRC_DIR)/display.c $(SRC_DIR)/sha256.c $(SRC_DIR)/json_export.c
@@ -42,4 +44,25 @@ debug: clean all
 # Regra para instalação
 .PHONY: install
 install: all
-	install -m 755 $(TARGET) /usr/local/bin/$(TARGET)
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+
+.PHONY: uninstall
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+
+.PHONY: test
+test: all tests/test_sha256 tests/test_collectors tests/test_json
+	./tests/test_sha256
+	./tests/test_collectors
+	./tests/test_json
+	sh tests/test_cli.sh ./$(TARGET)
+
+tests/test_sha256: tests/test_sha256.c $(SRC_DIR)/sha256.c $(SRC_DIR)/sha256.h
+	$(CC) $(CFLAGS) -I$(SRC_DIR) -o $@ tests/test_sha256.c $(SRC_DIR)/sha256.c
+
+tests/test_collectors: tests/test_collectors.c $(SRC_DIR)/collectors.c $(SRC_DIR)/sha256.c
+	$(CC) $(CFLAGS) -I$(SRC_DIR) -o $@ tests/test_collectors.c $(SRC_DIR)/collectors.c $(SRC_DIR)/sha256.c
+
+tests/test_json: tests/test_json.c $(SRC_DIR)/json_export.c
+	$(CC) $(CFLAGS) -I$(SRC_DIR) -o $@ tests/test_json.c $(SRC_DIR)/json_export.c

@@ -6,6 +6,13 @@
 #include <time.h>
 #include "display.h"
 #include "colors.h"
+#include "version.h"
+
+int hardware_id_color_enabled = 1;
+
+void set_color_enabled(int enabled) {
+    hardware_id_color_enabled = enabled != 0;
+}
 
 // Função auxiliar para contar o tamanho visível (ignora sequências ANSI e calcula caracteres UTF-8)
 static int visible_len(const char *str) {
@@ -68,7 +75,7 @@ void draw_box_bottom(int width) {
 }
 
 void draw_separator(int width) {
-    printf("%s├", DIM BCYAN);
+    printf("%s%s├", DIM, BCYAN);
     for (int i = 0; i < width - 2; i++) {
         printf("─");
     }
@@ -146,12 +153,12 @@ void display_header(int width) {
     draw_box_bottom(width);
 }
 
-void display_hardware_id_panel(const HardwareIdInfo *info, int width) {
+void display_hardware_id_panel(const HardwareIdInfo *info, int width, int include_identifiers) {
     draw_box_top("🔑 Identificação Única & Placa-Mãe (DMI)", width);
 
-    draw_kv("Hardware ID", info->hardware_id, width);
-    draw_kv("Machine UUID", info->formatted_uuid, width);
-    draw_kv("Machine ID", info->machine_id, width);
+    draw_kv("Hardware ID", include_identifiers ? info->hardware_id : "<redacted>", width);
+    draw_kv("Machine UUID", include_identifiers ? info->formatted_uuid : "<redacted>", width);
+    draw_kv("Machine ID", include_identifiers ? info->machine_id : "<redacted>", width);
 
     char mobo[256];
     snprintf(mobo, sizeof(mobo), "%s %s", info->board_vendor, info->board_name);
@@ -351,7 +358,7 @@ void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int w
     draw_box_bottom(width);
 }
 
-void display_network_panel(const NetInfo *net, const BtInfo *bt, int width) {
+void display_network_panel(const NetInfo *net, const BtInfo *bt, int width, int include_identifiers) {
     draw_box_top(" Rede & Conectividade", width);
 
     /* ─── Interfaces de Rede ─── */
@@ -375,19 +382,19 @@ void display_network_panel(const NetInfo *net, const BtInfo *bt, int width) {
             char main_info[256];
             if (iface->speed_mbps > 0) {
                 snprintf(main_info, sizeof(main_info), "%s [%s] %s (%llu Mbps)",
-                         iface->type_desc, iface->state, iface->mac, iface->speed_mbps);
+                         iface->type_desc, iface->state, include_identifiers ? iface->mac : "<redacted>", iface->speed_mbps);
             } else {
                 snprintf(main_info, sizeof(main_info), "%s [%s] %s",
-                         iface->type_desc, iface->state, iface->mac);
+                         iface->type_desc, iface->state, include_identifiers ? iface->mac : "<redacted>");
             }
             draw_kv(iface->name, main_info, width);
 
             /* Linha com IP e Driver */
             char details[256];
             if (iface->ipv4[0] && iface->ipv6[0]) {
-                snprintf(details, sizeof(details), "IP: %s | %s | Driver: %s", iface->ipv4, iface->ipv6, iface->driver);
+                snprintf(details, sizeof(details), "IP: %s | %s | Driver: %s", include_identifiers ? iface->ipv4 : "<redacted>", include_identifiers ? iface->ipv6 : "<redacted>", iface->driver);
             } else if (iface->ipv4[0]) {
-                snprintf(details, sizeof(details), "IP: %s | Driver: %s", iface->ipv4, iface->driver);
+                snprintf(details, sizeof(details), "IP: %s | Driver: %s", include_identifiers ? iface->ipv4 : "<redacted>", iface->driver);
             } else {
                 snprintf(details, sizeof(details), "Driver: %s", iface->driver);
             }
@@ -415,10 +422,10 @@ void display_network_panel(const NetInfo *net, const BtInfo *bt, int width) {
             char main_info[256];
             if (iface->ipv4[0]) {
                 snprintf(main_info, sizeof(main_info), "%s [%s] %s (IP: %s)",
-                         iface->type_desc, iface->state, iface->mac, iface->ipv4);
+                         iface->type_desc, iface->state, include_identifiers ? iface->mac : "<redacted>", include_identifiers ? iface->ipv4 : "<redacted>");
             } else {
                 snprintf(main_info, sizeof(main_info), "%s [%s] %s",
-                         iface->type_desc, iface->state, iface->mac);
+                         iface->type_desc, iface->state, include_identifiers ? iface->mac : "<redacted>");
             }
             draw_kv(iface->name, main_info, width);
             printed_virt++;
@@ -435,7 +442,7 @@ void display_network_panel(const NetInfo *net, const BtInfo *bt, int width) {
 
             char bt_info[256];
             snprintf(bt_info, sizeof(bt_info), "[%s] %s (%s)",
-                     adapter->type_desc, adapter->address, adapter->manufacturer);
+                     adapter->type_desc, include_identifiers ? adapter->address : "<redacted>", adapter->manufacturer);
             draw_kv(adapter->name, bt_info, width);
 
             char bt_drv[128];
@@ -454,7 +461,7 @@ void display_footer(int width) {
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", t);
     
     char footer[128];
-    snprintf(footer, sizeof(footer), "Hardware ID v1.0 | Gerado em: %s", time_str);
+    snprintf(footer, sizeof(footer), "Hardware ID v%s | Gerado em: %s", HARDWARE_ID_VERSION, time_str);
     
     int f_len = visible_len(footer);
     int pad_left = (width - f_len) / 2;

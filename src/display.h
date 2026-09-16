@@ -12,19 +12,20 @@
 
 /* ─── Renderização de Painéis Individuais ─── */
 void display_header(int width);
-void display_hardware_id_panel(const HardwareIdInfo *info, int width);
+void display_hardware_id_panel(const HardwareIdInfo *info, int width, int include_identifiers);
 void display_system_panel(const SysInfo *info, int width);
 void display_cpu_panel(const CpuInfo *info, int width);
 void display_memory_panel(const MemInfo *info, int width);
 void display_gpu_panel(const GpuInfo *info, int width);
 void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int width);
-void display_network_panel(const NetInfo *net, const BtInfo *bt, int width);
+void display_network_panel(const NetInfo *net, const BtInfo *bt, int width, int include_identifiers);
 void display_footer(int width);
 
 /* ─── Utilitários de Desenho ─── */
 
 /* Retorna a largura atual do terminal (fallback: 80 colunas) */
 int  get_terminal_width(void);
+void set_color_enabled(int enabled);
 
 /* Desenha a borda superior de um painel com título */
 void draw_box_top(const char *title, int width);

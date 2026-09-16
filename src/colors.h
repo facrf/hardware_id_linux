@@ -9,35 +9,37 @@
 #define COLORS_H
 
 /* ─── Reset ─── */
-#define RST       "\033[0m"
+extern int hardware_id_color_enabled;
+#define ANSI(code) (hardware_id_color_enabled ? code : "")
+#define RST       ANSI("\033[0m")
 
 /* ─── Estilos ─── */
-#define BOLD      "\033[1m"
-#define DIM       "\033[2m"
-#define UNDERLINE "\033[4m"
+#define BOLD      ANSI("\033[1m")
+#define DIM       ANSI("\033[2m")
+#define UNDERLINE ANSI("\033[4m")
 
 /* ─── Cores normais (foreground) ─── */
-#define RED       "\033[0;31m"
-#define GREEN     "\033[0;32m"
-#define YELLOW    "\033[0;33m"
-#define BLUE      "\033[0;34m"
-#define MAGENTA   "\033[0;35m"
-#define CYAN      "\033[0;36m"
-#define WHITE     "\033[0;37m"
+#define RED       ANSI("\033[0;31m")
+#define GREEN     ANSI("\033[0;32m")
+#define YELLOW    ANSI("\033[0;33m")
+#define BLUE      ANSI("\033[0;34m")
+#define MAGENTA   ANSI("\033[0;35m")
+#define CYAN      ANSI("\033[0;36m")
+#define WHITE     ANSI("\033[0;37m")
 
 /* ─── Cores em negrito (foreground) ─── */
-#define BRED      "\033[1;31m"
-#define BGREEN    "\033[1;32m"
-#define BYELLOW   "\033[1;33m"
-#define BBLUE     "\033[1;34m"
-#define BMAGENTA  "\033[1;35m"
-#define BCYAN     "\033[1;36m"
-#define BWHITE    "\033[1;37m"
+#define BRED      ANSI("\033[1;31m")
+#define BGREEN    ANSI("\033[1;32m")
+#define BYELLOW   ANSI("\033[1;33m")
+#define BBLUE     ANSI("\033[1;34m")
+#define BMAGENTA  ANSI("\033[1;35m")
+#define BCYAN     ANSI("\033[1;36m")
+#define BWHITE    ANSI("\033[1;37m")
 
 /* ─── Cores de fundo (background) ─── */
-#define BG_RED    "\033[41m"
-#define BG_GREEN  "\033[42m"
-#define BG_YELLOW "\033[43m"
-#define BG_BLUE   "\033[44m"
+#define BG_RED    ANSI("\033[41m")
+#define BG_GREEN  ANSI("\033[42m")
+#define BG_YELLOW ANSI("\033[43m")
+#define BG_BLUE   ANSI("\033[44m")
 
 #endif /* COLORS_H */

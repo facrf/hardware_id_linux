@@ -45,6 +45,12 @@ Possui **zero dependências externas** (não necessita de `libpci`, `libudev` ou
 - 📄 **Exportação em JSON (`--json` / `-j`):**
   - Saída completa em formato JSON válido e estruturado para integração em scripts de automação, auditoria de inventário ou sistemas de licenciamento.
 
+## Privacidade e estabilidade do fingerprint
+
+Por padrão, o programa oculta identificadores correlacionáveis na saída: fingerprint, UUID DMI, Machine ID, MACs, IPs e endereço Bluetooth. Use `--include-identifiers` somente quando a coleta estiver em um canal confiável.
+
+O fingerprint atual é `v2`: ele é derivado de dados de CPU/DMI e das MACs físicas ordenadas, sem incluir o `machine-id` da instalação. Assim, uma reinstalação do sistema não deve alterar o identificador. Ainda assim, IDs de hardware podem ser ausentes, alterados pelo firmware ou virtualizados; em contêineres e VMs o resultado pode refletir o host/hipervisor ou ser pouco distintivo.
+
 ---
 
 ## 🏗️ Como Compilar
@@ -71,11 +77,17 @@ make debug
 make clean
 ```
 
-### 4. Instalação no Sistema (Opcional)
+### 4. Testes
+```bash
+make test
+```
+Inclui vetores conhecidos de SHA-256, validação de JSON e comportamento da CLI.
+
+### 5. Instalação no Sistema (Opcional)
 ```bash
 sudo make install
 ```
-Instala o binário em `/usr/local/bin/hardware_id`.
+Instala o binário em `/usr/local/bin/hardware_id`. Para empacotamento ou instalação em staging, use `make PREFIX=/usr DESTDIR=/caminho/de/staging install`. A remoção usa `make uninstall` com os mesmos valores de `PREFIX` e `DESTDIR`.
 
 ---
 
@@ -97,6 +109,13 @@ Exemplo de uso com `jq` ou redirecionamento:
 ```bash
 ./hardware_id -j | jq .hardware_id
 ```
+
+Para incluir identificadores sensíveis deliberadamente:
+```bash
+./hardware_id --json --include-identifiers
+```
+
+No modo visual, as cores são ativadas apenas em terminal interativo. Use `--no-color` ou defina `NO_COLOR=1` para desativá-las explicitamente.
 
 ### 3. Linha de Comando e Ajuda
 ```bash

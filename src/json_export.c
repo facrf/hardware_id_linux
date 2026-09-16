@@ -32,6 +32,11 @@ static void json_print_str(FILE *out, const char *key, const char *val, int comm
     fprintf(out, "\"%s\n", comma ? "," : "");
 }
 
+static void json_print_identifier(FILE *out, const char *key, const char *val,
+                                  int comma, int include_identifiers) {
+    json_print_str(out, key, include_identifiers ? val : "<redacted>", comma);
+}
+
 void export_json(FILE *out,
                  const SysInfo *sys,
                  const HardwareIdInfo *hw_id,
@@ -41,7 +46,8 @@ void export_json(FILE *out,
                  const DiskInfo *disks,
                  const MountInfo *mounts,
                  const NetInfo *net,
-                 const BtInfo *bt) {
+                 const BtInfo *bt,
+                 int include_identifiers) {
     if (!out) return;
 
     fprintf(out, "{\n");
@@ -63,9 +69,10 @@ void export_json(FILE *out,
 
     /* 2. Identificação Única & Placa-Mãe */
     fprintf(out, "  \"hardware_id\": {\n");
-    json_print_str(out, "fingerprint_sha256", hw_id->hardware_id, 1);
-    json_print_str(out, "machine_uuid", hw_id->formatted_uuid, 1);
-    json_print_str(out, "machine_id", hw_id->machine_id, 1);
+    json_print_identifier(out, "fingerprint_sha256", hw_id->hardware_id, 1, include_identifiers);
+    json_print_identifier(out, "machine_uuid", hw_id->formatted_uuid, 1, include_identifiers);
+    json_print_identifier(out, "machine_id", hw_id->machine_id, 1, include_identifiers);
+    json_print_str(out, "fingerprint_version", hw_id->fingerprint_version, 1);
     json_print_str(out, "system_vendor", hw_id->sys_vendor, 1);
     json_print_str(out, "product_name", hw_id->product_name, 1);
     json_print_str(out, "product_version", hw_id->product_version, 1);
@@ -88,7 +95,13 @@ void export_json(FILE *out,
     json_print_str(out, "cache_l1i", cpu->cache_l1i, 1);
     json_print_str(out, "cache_l2", cpu->cache_l2, 1);
     json_print_str(out, "cache_l3", cpu->cache_l3, 1);
-    fprintf(out, "    \"usage_total_percent\": %.2f\n", cpu->usage_total);
+    fprintf(out, "    \"usage_total_percent\": %.2f,\n", cpu->usage_total);
+    fprintf(out, "    \"per_core_usage_percent\": [");
+    for (int i = 0; i < cpu->num_cores_sampled; i++) {
+        fprintf(out, "%s%.2f", i ? ", " : "", cpu->usage_per_core[i]);
+    }
+    fprintf(out, "],\n");
+    fprintf(out, "    \"per_core_usage_truncated\": %s\n", cpu->cores_truncated ? "true" : "false");
     fprintf(out, "  },\n");
 
     /* 4. Memória RAM & Swap */
@@ -114,7 +127,8 @@ void export_json(FILE *out,
         fprintf(out, "        \"priority\": %d\n", mem->swaps[i].priority);
         fprintf(out, "      }%s\n", (i < mem->swap_count - 1) ? "," : "");
     }
-    fprintf(out, "    ]\n");
+    fprintf(out, "    ],\n");
+    fprintf(out, "    \"swap_devices_truncated\": %s\n", mem->swaps_truncated ? "true" : "false");
     fprintf(out, "  },\n");
 
     /* 5. Placas de Vídeo (GPU) */
@@ -127,6 +141,7 @@ void export_json(FILE *out,
         fprintf(out, "    }%s\n", (i < gpu->count - 1) ? "," : "");
     }
     fprintf(out, "  ],\n");
+    fprintf(out, "  \"gpu_truncated\": %s,\n", gpu->truncated ? "true" : "false");
 
     /* 6. Armazenamento (Discos e Montagens) */
     fprintf(out, "  \"storage\": {\n");
@@ -140,6 +155,7 @@ void export_json(FILE *out,
         fprintf(out, "      }%s\n", (i < disks->count - 1) ? "," : "");
     }
     fprintf(out, "    ],\n");
+    fprintf(out, "    \"disks_truncated\": %s,\n", disks->truncated ? "true" : "false");
     fprintf(out, "    \"mounts\": [\n");
     for (int i = 0; i < mounts->count; i++) {
         fprintf(out, "      {\n");
@@ -152,7 +168,8 @@ void export_json(FILE *out,
         fprintf(out, "        \"usage_percent\": %.2f\n", mounts->mounts[i].usage_percent);
         fprintf(out, "      }%s\n", (i < mounts->count - 1) ? "," : "");
     }
-    fprintf(out, "    ]\n");
+    fprintf(out, "    ],\n");
+    fprintf(out, "    \"mounts_truncated\": %s\n", mounts->truncated ? "true" : "false");
     fprintf(out, "  },\n");
 
     /* 7. Interfaces de Rede */
@@ -162,9 +179,9 @@ void export_json(FILE *out,
         json_print_str(out, "name", net->interfaces[i].name, 1);
         json_print_str(out, "type", net->interfaces[i].type_desc, 1);
         json_print_str(out, "driver", net->interfaces[i].driver, 1);
-        json_print_str(out, "mac", net->interfaces[i].mac, 1);
-        json_print_str(out, "ipv4", net->interfaces[i].ipv4, 1);
-        json_print_str(out, "ipv6", net->interfaces[i].ipv6, 1);
+        json_print_identifier(out, "mac", net->interfaces[i].mac, 1, include_identifiers);
+        json_print_identifier(out, "ipv4", net->interfaces[i].ipv4, 1, include_identifiers);
+        json_print_identifier(out, "ipv6", net->interfaces[i].ipv6, 1, include_identifiers);
         json_print_str(out, "state", net->interfaces[i].state, 1);
         fprintf(out, "      \"is_wireless\": %s,\n", net->interfaces[i].is_wireless ? "true" : "false");
         fprintf(out, "      \"is_virtual\": %s,\n", net->interfaces[i].is_virtual ? "true" : "false");
@@ -172,19 +189,21 @@ void export_json(FILE *out,
         fprintf(out, "    }%s\n", (i < net->count - 1) ? "," : "");
     }
     fprintf(out, "  ],\n");
+    fprintf(out, "  \"network_truncated\": %s,\n", net->truncated ? "true" : "false");
 
     /* 8. Bluetooth */
     fprintf(out, "  \"bluetooth\": [\n");
     for (int i = 0; i < bt->count; i++) {
         fprintf(out, "    {\n");
         json_print_str(out, "name", bt->adapters[i].name, 1);
-        json_print_str(out, "address", bt->adapters[i].address, 1);
+        json_print_identifier(out, "address", bt->adapters[i].address, 1, include_identifiers);
         json_print_str(out, "type", bt->adapters[i].type_desc, 1);
         json_print_str(out, "driver", bt->adapters[i].driver, 1);
         json_print_str(out, "manufacturer", bt->adapters[i].manufacturer, 0);
         fprintf(out, "    }%s\n", (i < bt->count - 1) ? "," : "");
     }
-    fprintf(out, "  ]\n");
+    fprintf(out, "  ],\n");
+    fprintf(out, "  \"bluetooth_truncated\": %s\n", bt->truncated ? "true" : "false");
 
     fprintf(out, "}\n");
 }

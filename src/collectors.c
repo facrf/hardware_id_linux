@@ -23,6 +23,7 @@ void trim_string(char *str) {
     if (start != str) {
         memmove(str, start, strlen(start) + 1);
     }
+    if (*str == '\0') return;
     char *end = str + strlen(str) - 1;
     while (end >= str && isspace((unsigned char)*end)) {
         *end = '\0';
@@ -191,32 +192,48 @@ void collect_hardware_id_info(HardwareIdInfo *info, const CpuInfo *cpu, const Ne
         snprintf(info->machine_id, sizeof(info->machine_id), "Desconhecido");
     }
 
-    // 3. MAC Address Físico Principal
-    const char *primary_mac = "00:00:00:00:00:00";
+    /* 3. MACs físicos, ordenados para que a ordem do sysfs não altere o hash. */
+    char macs[MAX_NETS][20];
+    int mac_count = 0;
     if (net) {
         for (int i = 0; i < net->count; i++) {
             if (!net->interfaces[i].is_virtual && net->interfaces[i].mac[0] &&
                 strcmp(net->interfaces[i].mac, "00:00:00:00:00:00") != 0) {
-                primary_mac = net->interfaces[i].mac;
-                break;
+                snprintf(macs[mac_count++], sizeof(macs[0]), "%s", net->interfaces[i].mac);
             }
         }
     }
+    for (int i = 0; i < mac_count; i++) {
+        for (int j = i + 1; j < mac_count; j++) {
+            if (strcmp(macs[i], macs[j]) > 0) {
+                char tmp[20];
+                memcpy(tmp, macs[i], sizeof(tmp));
+                memcpy(macs[i], macs[j], sizeof(tmp));
+                memcpy(macs[j], tmp, sizeof(tmp));
+            }
+        }
+    }
+    char mac_list[sizeof(macs) + 1] = "";
+    for (int i = 0; i < mac_count; i++) {
+        size_t used = strlen(mac_list);
+        snprintf(mac_list + used, sizeof(mac_list) - used, "%s%s", i ? "," : "", macs[i]);
+    }
+    if (!mac_list[0]) snprintf(mac_list, sizeof(mac_list), "none");
 
     // 4. Constrói a semente canônica para o Hardware Fingerprint
     char seed[1024];
-    snprintf(seed, sizeof(seed), "CPU:%s|CORES:%d|DMI_SYS:%s|DMI_PROD:%s|DMI_BOARD:%s|MID:%s|MAC:%s|UUID:%s",
+    snprintf(seed, sizeof(seed), "v2|CPU:%s|CORES:%d|DMI_SYS:%s|DMI_PROD:%s|DMI_BOARD:%s|MACS:%s|UUID:%s",
              cpu ? cpu->model : "unknown",
              cpu ? cpu->physical_cores : 0,
              info->sys_vendor,
              info->product_name,
              info->board_name,
-             info->machine_id,
-             primary_mac,
+             mac_list,
              info->product_uuid[0] ? info->product_uuid : "none");
 
     // 5. Calcula o hash criptográfico SHA-256
     sha256_string(seed, info->hardware_id);
+    snprintf(info->fingerprint_version, sizeof(info->fingerprint_version), "v2");
 
     // 6. UUID Canônico Formatado
     if (info->product_uuid[0] && strlen(info->product_uuid) >= 32) {
@@ -238,11 +255,14 @@ struct CpuStat {
 };
 
 // Lê as métricas atuais de CPU do /proc/stat
-static void read_cpu_stats(struct CpuStat *total, struct CpuStat cores[], int *num_cores) {
+static void read_cpu_stats(struct CpuStat *total, struct CpuStat cores[], int *num_cores, int *truncated) {
+    memset(total, 0, sizeof(*total));
+    memset(cores, 0, sizeof(struct CpuStat) * MAX_CORES);
+    *num_cores = 0;
+    *truncated = 0;
     FILE *f = fopen("/proc/stat", "r");
     if (!f) return;
     char line[256];
-    *num_cores = 0;
     while (fgets(line, sizeof(line), f)) {
         if (strncmp(line, "cpu ", 4) == 0) {
             sscanf(line + 4, "%llu %llu %llu %llu %llu %llu %llu %llu",
@@ -255,6 +275,8 @@ static void read_cpu_stats(struct CpuStat *total, struct CpuStat cores[], int *n
                     &cores[*num_cores].idle, &cores[*num_cores].iowait, &cores[*num_cores].irq,
                     &cores[*num_cores].softirq, &cores[*num_cores].steal);
                 (*num_cores)++;
+            } else {
+                *truncated = 1;
             }
         }
     }
@@ -375,11 +397,11 @@ void collect_cpu_info(CpuInfo *info) {
     // Uso de CPU
     struct CpuStat total1, total2;
     struct CpuStat cores1[MAX_CORES], cores2[MAX_CORES];
-    int num_cores1 = 0, num_cores2 = 0;
+    int num_cores1 = 0, num_cores2 = 0, truncated1 = 0, truncated2 = 0;
 
-    read_cpu_stats(&total1, cores1, &num_cores1);
+    read_cpu_stats(&total1, cores1, &num_cores1, &truncated1);
     usleep(200000); // 200ms
-    read_cpu_stats(&total2, cores2, &num_cores2);
+    read_cpu_stats(&total2, cores2, &num_cores2, &truncated2);
 
     unsigned long long active1 = total1.user + total1.nice + total1.system + total1.irq + total1.softirq + total1.steal;
     unsigned long long total_time1 = active1 + total1.idle + total1.iowait;
@@ -396,6 +418,7 @@ void collect_cpu_info(CpuInfo *info) {
     int num_cores = num_cores1 < num_cores2 ? num_cores1 : num_cores2;
     if (num_cores > MAX_CORES) num_cores = MAX_CORES;
     info->num_cores_sampled = num_cores;
+    info->cores_truncated = truncated1 || truncated2;
 
     for (int i = 0; i < num_cores; i++) {
         unsigned long long c_active1 = cores1[i].user + cores1[i].nice + cores1[i].system + cores1[i].irq + cores1[i].softirq + cores1[i].steal;
@@ -449,7 +472,11 @@ void collect_memory_info(MemInfo *info) {
         char sline[512];
         /* Pula o cabeçalho */
         if (fgets(sline, sizeof(sline), sf)) {
-            while (fgets(sline, sizeof(sline), sf) && info->swap_count < MAX_SWAPS) {
+            while (fgets(sline, sizeof(sline), sf)) {
+                if (info->swap_count >= MAX_SWAPS) {
+                    info->swaps_truncated = 1;
+                    break;
+                }
                 SwapEntry *se = &info->swaps[info->swap_count];
                 char dev[128], type[32];
                 unsigned long long size_val = 0, used_val = 0;
@@ -496,7 +523,7 @@ void collect_gpu_info(GpuInfo *info) {
         safe_read_file(class_path, class_str, sizeof(class_str));
         
         if (strncmp(class_str, "0x0300", 6) == 0 || strncmp(class_str, "0x0302", 6) == 0) {
-            if (info->count >= MAX_GPUS) break;
+            if (info->count >= MAX_GPUS) { info->truncated = 1; break; }
             GpuEntry *gpu = &info->gpus[info->count];
             snprintf(gpu->pci_slot, sizeof(gpu->pci_slot), "%s", dir->d_name);
 
@@ -559,7 +586,7 @@ void collect_disk_info(DiskInfo *info) {
             continue;
         }
 
-        if (info->count >= MAX_DISKS) break;
+        if (info->count >= MAX_DISKS) { info->truncated = 1; break; }
         DiskEntry *disk = &info->disks[info->count];
         snprintf(disk->device, sizeof(disk->device), "%s", dn);
 
@@ -619,7 +646,7 @@ void collect_mount_info(MountInfo *info) {
             }
             if (skip) continue;
 
-            if (info->count >= MAX_MOUNTS) break;
+            if (info->count >= MAX_MOUNTS) { info->truncated = 1; break; }
             MountEntry *mnt = &info->mounts[info->count];
             snprintf(mnt->device, sizeof(mnt->device), "%s", device);
             snprintf(mnt->mount_point, sizeof(mnt->mount_point), "%s", mount_point);
@@ -649,7 +676,7 @@ void collect_net_info(NetInfo *info) {
     struct dirent *dir;
     while ((dir = readdir(d)) != NULL) {
         if (dir->d_name[0] == '.') continue;
-        if (info->count >= MAX_NETS) break;
+        if (info->count >= MAX_NETS) { info->truncated = 1; break; }
 
         NetEntry *net = &info->interfaces[info->count];
         snprintf(net->name, sizeof(net->name), "%s", dir->d_name);
@@ -798,7 +825,7 @@ void collect_bt_info(BtInfo *info) {
     struct dirent *dir;
     while ((dir = readdir(d)) != NULL) {
         if (dir->d_name[0] == '.') continue;
-        if (info->count >= MAX_BT) break;
+        if (info->count >= MAX_BT) { info->truncated = 1; break; }
 
         BtEntry *bt = &info->adapters[info->count];
         snprintf(bt->name, sizeof(bt->name), "%s", dir->d_name);

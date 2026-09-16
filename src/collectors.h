@@ -52,6 +52,7 @@ typedef struct {
     char machine_id[64];       /* /etc/machine-id */
     char hardware_id[65];      /* SHA-256 Hash único da impressão digital de hardware */
     char formatted_uuid[64];   /* UUID canônico sintético/DMI */
+    char fingerprint_version[16];
 } HardwareIdInfo;
 
 /* ─── Informações do Processador (CPU) ─── */
@@ -69,6 +70,7 @@ typedef struct {
     double usage_total;
     double usage_per_core[MAX_CORES];
     int  num_cores_sampled;
+    int  cores_truncated;
 } CpuInfo;
 
 /* ─── Entrada de dispositivo Swap individual ─── */
@@ -95,6 +97,7 @@ typedef struct {
     double swap_usage_percent;
     SwapEntry swaps[MAX_SWAPS];
     int swap_count;
+    int swaps_truncated;
 } MemInfo;
 
 /* ─── Informações de GPU (uma entrada por placa) ─── */
@@ -107,6 +110,7 @@ typedef struct {
 typedef struct {
     GpuEntry gpus[MAX_GPUS];
     int count;
+    int truncated;
 } GpuInfo;
 
 /* ─── Informações de Disco Físico (block device) ─── */
@@ -120,6 +124,7 @@ typedef struct {
 typedef struct {
     DiskEntry disks[MAX_DISKS];
     int count;
+    int truncated;
 } DiskInfo;
 
 /* ─── Informações de Montagem / Sistemas de Arquivos ─── */
@@ -136,6 +141,7 @@ typedef struct {
 typedef struct {
     MountEntry mounts[MAX_MOUNTS];
     int count;
+    int truncated;
 } MountInfo;
 
 /* ─── Informações de Interface de Rede ─── */
@@ -155,6 +161,7 @@ typedef struct {
 typedef struct {
     NetEntry interfaces[MAX_NETS];
     int count;
+    int truncated;
 } NetInfo;
 
 /* ─── Informações de Bluetooth ─── */
@@ -169,6 +176,7 @@ typedef struct {
 typedef struct {
     BtEntry adapters[MAX_BT];
     int count;
+    int truncated;
 } BtInfo;
 
 
