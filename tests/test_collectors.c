@@ -13,6 +13,14 @@ int main(void) {
     trim_string(padded);
     assert(strcmp(padded, "valor") == 0);
 
+    char buf[64];
+    format_bytes(500, buf, sizeof(buf));
+    assert(strcmp(buf, "500 B") == 0);
+    format_bytes(1024 * 1024 * 2ULL, buf, sizeof(buf));
+    assert(strcmp(buf, "2.00 MiB") == 0);
+    format_kb(1024ULL, buf, sizeof(buf));
+    assert(strcmp(buf, "1.00 MiB") == 0);
+
     puts("Collector utilities: OK");
     return 0;
 }

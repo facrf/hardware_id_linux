@@ -82,16 +82,38 @@ void draw_separator(int width) {
     printf("┤%s\n", RST);
 }
 
-void draw_kv(const char *key, const char *value, int width) {
-    char padded_key[32];
-    snprintf(padded_key, sizeof(padded_key), "%-18s", key);
-    
-    int val_len = visible_len(value);
-    int used_len = 3 + 18 + 3 + val_len; // "│  " (3) + key (18) + " : " (3) + value
+void draw_section_header(const char *title, int width) {
+    if (!title) return;
+    int title_len = visible_len(title);
+    int used_len = 3 + title_len; // "│  " (3) + title
     int pad_len = width - used_len - 2; // -2 para " │"
     if (pad_len < 0) pad_len = 0;
-    
-    printf("%s│  %s%s%s%s : %s%s%s", BCYAN, RST, BYELLOW, padded_key, RST, BWHITE, value, RST);
+
+    printf("%s│  %s%s%s%s", BCYAN, RST, BCYAN, title, RST);
+    for (int i = 0; i < pad_len; i++) {
+        putchar(' ');
+    }
+    printf("%s │%s\n", BCYAN, RST);
+}
+
+void draw_kv(const char *key, const char *value, int width) {
+    if (!key) key = "";
+    if (!value) value = "";
+
+    int key_vis = visible_len(key);
+    int key_pad = (key_vis < 18) ? (18 - key_vis) : 0;
+    int key_col = (key_vis < 18) ? 18 : key_vis;
+
+    int val_len = visible_len(value);
+    int used_len = 3 + key_col + 3 + val_len; // "│  " (3) + key_col + " : " (3) + value
+    int pad_len = width - used_len - 2; // -2 para " │"
+    if (pad_len < 0) pad_len = 0;
+
+    printf("%s│  %s%s%s", BCYAN, RST, BYELLOW, key);
+    for (int i = 0; i < key_pad; i++) {
+        putchar(' ');
+    }
+    printf("%s : %s%s%s", RST, BWHITE, value, RST);
     for (int i = 0; i < pad_len; i++) {
         putchar(' ');
     }
@@ -205,7 +227,13 @@ void display_cpu_panel(const CpuInfo *info, int width) {
     draw_kv("Núcleos/Threads", cores, width);
     
     char freq[128];
-    snprintf(freq, sizeof(freq), "%.2f MHz (Min: %.2f - Max: %.2f)", info->freq_current_mhz, info->freq_min_mhz, info->freq_max_mhz);
+    if (info->freq_min_mhz > 0.0 && info->freq_max_mhz > 0.0) {
+        snprintf(freq, sizeof(freq), "%.2f MHz (Min: %.2f - Max: %.2f)", info->freq_current_mhz, info->freq_min_mhz, info->freq_max_mhz);
+    } else if (info->freq_current_mhz > 0.0) {
+        snprintf(freq, sizeof(freq), "%.2f MHz", info->freq_current_mhz);
+    } else {
+        snprintf(freq, sizeof(freq), "N/A");
+    }
     draw_kv("Frequência", freq, width);
     
     char cache[256];
@@ -215,8 +243,8 @@ void display_cpu_panel(const CpuInfo *info, int width) {
     draw_separator(width);
     draw_progress_bar("Uso Total", info->usage_total, width);
     
-    // Per-core display in columns
-    int cols = 4;
+    // Per-core display in columns (responsivo para larguras menores como 80 colunas)
+    int cols = (width >= 86) ? 4 : (width >= 66 ? 3 : 2);
     for (int i = 0; i < info->num_cores_sampled; i += cols) {
         printf("%s│  %s", BCYAN, RST);
         int printed_chars = 3; // "│  "
@@ -327,7 +355,7 @@ void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int w
     draw_box_top(" Armazenamento", width);
     
     // Subseção: Dispositivos Físicos
-    draw_kv("=== Dispositivos Físicos ===", "", width);
+    draw_section_header("=== Dispositivos Físicos ===", width);
     for (int i = 0; i < disks->count; i++) {
         char buf_size[32];
         format_bytes(disks->disks[i].size_bytes, buf_size, sizeof(buf_size));
@@ -340,7 +368,7 @@ void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int w
     draw_separator(width);
     
     // Subseção: Sistemas de Arquivos Montados
-    draw_kv("=== Sistemas de Arquivos ===", "", width);
+    draw_section_header("=== Sistemas de Arquivos ===", width);
     for (int i = 0; i < mounts->count; i++) {
         char buf_total[32], buf_used[32];
         format_bytes(mounts->mounts[i].total_bytes, buf_total, sizeof(buf_total));
@@ -362,7 +390,7 @@ void display_network_panel(const NetInfo *net, const BtInfo *bt, int width, int 
     draw_box_top(" Rede & Conectividade", width);
 
     /* ─── Interfaces de Rede ─── */
-    draw_kv("=== Interfaces de Rede ===", "", width);
+    draw_section_header("=== Interfaces de Rede ===", width);
 
     if (net->count == 0) {
         draw_kv("Status", "Nenhuma interface detectada", width);
@@ -435,7 +463,7 @@ void display_network_panel(const NetInfo *net, const BtInfo *bt, int width, int 
     /* ─── Bluetooth ─── */
     if (bt->count > 0) {
         draw_separator(width);
-        draw_kv("=== Bluetooth ===", "", width);
+        draw_section_header("=== Bluetooth ===", width);
 
         for (int i = 0; i < bt->count; i++) {
             const BtEntry *adapter = &bt->adapters[i];

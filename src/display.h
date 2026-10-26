@@ -30,6 +30,9 @@ void set_color_enabled(int enabled);
 /* Desenha a borda superior de um painel com título */
 void draw_box_top(const char *title, int width);
 
+/* Desenha um título de seção dentro de um painel */
+void draw_section_header(const char *title, int width);
+
 /* Desenha a borda inferior de um painel */
 void draw_box_bottom(int width);
 

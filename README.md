@@ -14,15 +14,15 @@ Possui **zero dependências externas** (não necessita de `libpci`, `libudev` ou
   - Leitura do Machine ID do sistema (`/etc/machine-id` e `/var/lib/dbus/machine-id`).
   - Extração de dados de **Placa-Mãe e BIOS (DMI/SMBIOS)**: Fabricante, Modelo da Placa, Fabricante/Modelo do Sistema e Versão/Data da BIOS/UEFI.
 -  **Sistema Operacional & Ambiente:**
-  - Nome da Distribuição, Versão e Codename (via `/etc/os-release`).
+  - Nome da Distribuição, Versão e Codename (via `/etc/os-release` com fallback automático para `/usr/lib/os-release`).
   - Versão do Kernel Linux e Arquitetura do processador (`uname`).
   - Hostname, Usuário logado, Tempo de atividade (*Uptime*) formatado, Shell e versão do Compilador.
 -  **Processador (CPU):**
   - Modelo comercial do processador.
   - Contagem de núcleos físicos e threads lógicos.
-  - Frequências de operação em tempo real (Atual, Mínima e Máxima em MHz).
+  - Frequências de operação em tempo real (Atual, Mínima e Máxima em MHz, com fallback via `/proc/cpuinfo` para ambientes virtualizados ou instâncias cloud).
   - Tamanhos de Cache L1d, L1i, L2 e L3.
-  - Utilização percentual total e **monitoramento individual por núcleo**.
+  - Utilização percentual total e **monitoramento individual por núcleo** com visualização responsiva para terminais de 80 ou mais colunas.
 -  **Memória RAM & Swap Inteligente:**
   - Métricas de RAM: Total, Usada, Livre, Disponível, Buffers e Cached.
   - Status geral de Swap com percentual de uso.
@@ -115,7 +115,7 @@ Para incluir identificadores sensíveis deliberadamente:
 ./hardware_id --json --include-identifiers
 ```
 
-No modo visual, as cores são ativadas apenas em terminal interativo. Use `--no-color` ou defina `NO_COLOR=1` para desativá-las explicitamente.
+No modo visual, o layout adapta automaticamente a exibição de colunas à largura do terminal (com suporte responsivo a terminais padrão de 80 colunas e alinhamento visual preciso para caracteres acentuados UTF-8). As cores são ativadas apenas em terminal interativo. Use `--no-color` ou defina `NO_COLOR=1` para desativá-las explicitamente.
 
 ### 3. Linha de Comando e Ajuda
 ```bash

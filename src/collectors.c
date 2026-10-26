@@ -70,8 +70,11 @@ void format_kb(unsigned long long kb, char *buf, size_t buf_size) {
 void collect_system_info(SysInfo *info) {
     memset(info, 0, sizeof(*info));
     
-    // Ler informações da distribuição (/etc/os-release)
+    // Ler informações da distribuição (/etc/os-release com fallback para /usr/lib/os-release)
     FILE *f = fopen("/etc/os-release", "r");
+    if (!f) {
+        f = fopen("/usr/lib/os-release", "r");
+    }
     if (f) {
         char line[256];
         while (fgets(line, sizeof(line), f)) {
@@ -292,6 +295,7 @@ void collect_cpu_info(CpuInfo *info) {
     int core_ids[MAX_CORES];
     int pair_count = 0;
     int logical_threads = 0;
+    double fallback_mhz = 0.0;
 
     FILE *f = fopen("/proc/cpuinfo", "r");
     if (f) {
@@ -324,6 +328,11 @@ void collect_cpu_info(CpuInfo *info) {
                         snprintf(info->model, sizeof(info->model), "%s", colon + 1);
                         trim_string(info->model);
                     }
+                }
+            } else if (strncmp(line, "cpu MHz", 7) == 0) {
+                if (fallback_mhz == 0.0) {
+                    char *colon = strchr(line, ':');
+                    if (colon) fallback_mhz = atof(colon + 1);
                 }
             } else if (strncmp(line, "physical id", 11) == 0) {
                 char *colon = strchr(line, ':');
@@ -364,6 +373,11 @@ void collect_cpu_info(CpuInfo *info) {
 
     safe_read_file("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq", buf, sizeof(buf));
     if (buf[0]) info->freq_max_mhz = atof(buf) / 1000.0; else info->freq_max_mhz = 0.0;
+
+    // Fallback de frequência via /proc/cpuinfo caso cpufreq não esteja disponível (ex.: VMs)
+    if (info->freq_current_mhz == 0.0 && fallback_mhz > 0.0) {
+        info->freq_current_mhz = fallback_mhz;
+    }
 
     // Cache
     snprintf(info->cache_l1d, sizeof(info->cache_l1d), "N/A");
