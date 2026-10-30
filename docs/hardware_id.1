@@ -15,6 +15,9 @@ Ele inspeciona a fundo componentes de hardware, placa-mãe, DMI/SMBIOS, conectiv
 \fB\-j\fR, \fB\-\-json\fR
 Exporta todos os dados coletados em formato JSON estruturado na saída padrão.
 .TP
+\fB\-e\fR, \fB\-\-env\fR
+Exporta os dados principais no formato de variáveis de ambiente shell (\fIKEY="VALUE"\fR), ideal para \fBeval $(hardware_id --env)\fR.
+.TP
 \fB\-s\fR, \fB\-\-only\-id\fR
 Exibe apenas o hash criptográfico SHA-256 do Hardware Fingerprint cru (sem cores, sem formatação TUI ou JSON) e encerra imediatamente. Ideal para scripts shell.
 .TP

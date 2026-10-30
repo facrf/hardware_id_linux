@@ -81,7 +81,9 @@ void export_json(FILE *out,
     json_print_str(out, "board_name", hw_id->board_name, 1);
     json_print_str(out, "bios_vendor", hw_id->bios_vendor, 1);
     json_print_str(out, "bios_version", hw_id->bios_version, 1);
-    json_print_str(out, "bios_date", hw_id->bios_date, 0);
+    json_print_str(out, "bios_date", hw_id->bios_date, 1);
+    json_print_identifier(out, "product_serial", hw_id->product_serial, 1, include_identifiers);
+    json_print_identifier(out, "board_serial", hw_id->board_serial, 0, include_identifiers);
     fprintf(out, "  },\n");
 
     /* 3. Processador (CPU) */
@@ -157,6 +159,7 @@ void export_json(FILE *out,
         json_print_str(out, "device", disks->disks[i].device, 1);
         json_print_str(out, "model", disks->disks[i].model, 1);
         json_print_str(out, "type", disks->disks[i].type, 1);
+        json_print_identifier(out, "serial", disks->disks[i].serial, 1, include_identifiers);
         fprintf(out, "        \"size_bytes\": %llu\n", disks->disks[i].size_bytes);
         fprintf(out, "      }%s\n", (i < disks->count - 1) ? "," : "");
     }
@@ -179,9 +182,12 @@ void export_json(FILE *out,
     fprintf(out, "  },\n");
 
     /* 7. Interfaces de Rede */
-    fprintf(out, "  \"network\": [\n");
+    fprintf(out, "  \"network\": {\n");
+    json_print_identifier(out, "default_gateway", net->default_gateway, 1, include_identifiers);
+    json_print_str(out, "default_interface", net->default_iface, 1);
+    fprintf(out, "    \"interfaces\": [\n");
     for (int i = 0; i < net->count; i++) {
-        fprintf(out, "    {\n");
+        fprintf(out, "      {\n");
         json_print_str(out, "name", net->interfaces[i].name, 1);
         json_print_str(out, "type", net->interfaces[i].type_desc, 1);
         json_print_str(out, "driver", net->interfaces[i].driver, 1);
@@ -189,13 +195,15 @@ void export_json(FILE *out,
         json_print_identifier(out, "ipv4", net->interfaces[i].ipv4, 1, include_identifiers);
         json_print_identifier(out, "ipv6", net->interfaces[i].ipv6, 1, include_identifiers);
         json_print_str(out, "state", net->interfaces[i].state, 1);
-        fprintf(out, "      \"is_wireless\": %s,\n", net->interfaces[i].is_wireless ? "true" : "false");
-        fprintf(out, "      \"is_virtual\": %s,\n", net->interfaces[i].is_virtual ? "true" : "false");
-        fprintf(out, "      \"speed_mbps\": %llu\n", net->interfaces[i].speed_mbps);
-        fprintf(out, "    }%s\n", (i < net->count - 1) ? "," : "");
+        fprintf(out, "        \"is_wireless\": %s,\n", net->interfaces[i].is_wireless ? "true" : "false");
+        fprintf(out, "        \"is_virtual\": %s,\n", net->interfaces[i].is_virtual ? "true" : "false");
+        fprintf(out, "        \"is_default_gateway\": %s,\n", net->interfaces[i].is_default_gateway ? "true" : "false");
+        fprintf(out, "        \"speed_mbps\": %llu\n", net->interfaces[i].speed_mbps);
+        fprintf(out, "      }%s\n", (i < net->count - 1) ? "," : "");
     }
-    fprintf(out, "  ],\n");
-    fprintf(out, "  \"network_truncated\": %s,\n", net->truncated ? "true" : "false");
+    fprintf(out, "    ],\n");
+    fprintf(out, "    \"network_truncated\": %s\n", net->truncated ? "true" : "false");
+    fprintf(out, "  },\n");
 
     /* 8. Bluetooth */
     fprintf(out, "  \"bluetooth\": [\n");

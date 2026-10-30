@@ -1,0 +1,15 @@
+#compdef hardware_id
+
+_arguments -s \
+  '(-j --json)'{-j,--json}'[Exporta os dados em formato JSON]' \
+  '(-e --env)'{-e,--env}'[Exporta os dados como variáveis de ambiente shell]' \
+  '(-s --only-id)'{-s,--only-id}'[Exibe apenas o hash SHA-256 do Hardware ID]' \
+  '--uuid[Exibe apenas o Machine UUID canônico]' \
+  '(-f --fast)'{-f,--fast}'[Modo rápido: pula amostragem de CPU]' \
+  '(-w --watch)'{-w,--watch}'[Modo monitor interativo contínuo]:intervalo (s):(1 2 3 5 10)' \
+  '--include-identifiers[Inclui identificadores sensíveis (IDs, MACs, IPs)]' \
+  '--redact[Oculta identificadores sensíveis (padrão)]' \
+  '--ascii[Usa caracteres ASCII clássicos nas caixas]' \
+  '--no-color[Desativa cores ANSI]' \
+  '(-h --help)'{-h,--help}'[Exibe mensagem de ajuda]' \
+  '(-v --version)'{-v,--version}'[Exibe versão do programa]'

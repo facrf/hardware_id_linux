@@ -51,6 +51,8 @@ typedef struct {
     char bios_version[64];     /* Versão da BIOS */
     char bios_date[32];        /* Data da BIOS */
     char machine_id[64];       /* /etc/machine-id */
+    char product_serial[64];   /* Número de série do produto (se com root) */
+    char board_serial[64];     /* Número de série da placa-mãe (se com root) */
     char hardware_id[65];      /* SHA-256 Hash único da impressão digital de hardware */
     char formatted_uuid[64];   /* UUID canônico sintético/DMI */
     char fingerprint_version[16];
@@ -120,6 +122,7 @@ typedef struct {
     char device[64];           /* ex.: sda, nvme0n1 */
     char model[128];
     char type[16];             /* SSD, HDD ou NVMe */
+    char serial[64];           /* Número de série ou WWID */
     unsigned long long size_bytes;
 } DiskEntry;
 
@@ -157,11 +160,14 @@ typedef struct {
     char type_desc[32];        /* Ethernet, Wi-Fi, Loopback, Virtual, Bridge */
     int  is_wireless;
     int  is_virtual;           /* 1 se for loopback, veth, bridge, docker, etc. */
+    int  is_default_gateway;   /* 1 se for a interface da rota padrão */
     unsigned long long speed_mbps; /* velocidade do link em Mbps (0 se indisponível) */
 } NetEntry;
 
 typedef struct {
     NetEntry interfaces[MAX_NETS];
+    char default_gateway[64];  /* IP do gateway padrão */
+    char default_iface[32];    /* Nome da interface do gateway padrão */
     int count;
     int truncated;
 } NetInfo;

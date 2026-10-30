@@ -115,18 +115,29 @@ HWID=$(./hardware_id --only-id)
 UUID=$(./hardware_id --uuid)
 ```
 
-### 4. Modo Rápido (Skip de Amostragem de CPU)
+### 4. Exportação de Variáveis de Ambiente Shell (`--env` / `-e`)
+Ideal para scripts de provisionamento, Ansible, Docker ou carregamento dinâmico:
+```bash
+# Exporta variáveis no formato KEY="VALUE":
+./hardware_id --env
+
+# Carrega diretamente na sessão atual do shell:
+eval $(./hardware_id -e --include-identifiers)
+echo "Máquina: $HW_HOSTNAME | ID: $HW_ID | Gateway: $HW_DEFAULT_GATEWAY"
+```
+
+### 5. Modo Rápido (Skip de Amostragem de CPU)
 ```bash
 # Executa em menos de 5ms pulando o sleep de 200ms da amostragem de CPU:
 ./hardware_id --fast --json
 ```
 
-### 5. Modo ASCII Clássico (Servidores e Terminais Legados)
+### 6. Modo ASCII Clássico (Servidores e Terminais Legados)
 ```bash
 ./hardware_id --ascii
 ```
 
-### 6. Exportação Estruturada em JSON
+### 7. Exportação Estruturada em JSON
 ```bash
 # JSON padrão com identificadores mascarados:
 ./hardware_id --json
@@ -137,10 +148,10 @@ UUID=$(./hardware_id --uuid)
 
 Exemplo com `jq`:
 ```bash
-./hardware_id -j | jq '{ambiente: .system.virtualization, cpu: .cpu.model, temp: .cpu.temp_celsius}'
+./hardware_id -j | jq '{ambiente: .system.virtualization, cpu: .cpu.model, temp: .cpu.temp_celsius, gateway: .network.default_gateway}'
 ```
 
-### 7. Ajuda Completa
+### 8. Ajuda Completa
 ```bash
 ./hardware_id --help
 ```

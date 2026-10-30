@@ -5,6 +5,7 @@ _hardware_id() {
 
     local options="
         -j --json
+        -e --env
         -s --only-id
         --uuid
         -f --fast

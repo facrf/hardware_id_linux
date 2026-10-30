@@ -1,0 +1,31 @@
+name: CI Build & Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [ gcc, clang ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile and run tests
+        run: |
+          make CC=${{ matrix.compiler }} clean
+          make CC=${{ matrix.compiler }} test
+
+      - name: Run AddressSanitizer debug checks
+        run: |
+          make CC=${{ matrix.compiler }} debug
+          ./hardware_id --fast --json > /dev/null
+          ./hardware_id --only-id > /dev/null
+          ./hardware_id --env > /dev/null
+          ./hardware_id --ascii --no-color > /dev/null

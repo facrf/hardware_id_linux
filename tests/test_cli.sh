@@ -34,13 +34,24 @@ pattern = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-f
 assert re.match(pattern, val), f"Invalid UUID: {val}"
 '
 
-# 3. Teste de modo rápido (--fast) e modo ASCII (--ascii)
+# 3. Teste de exportação ENV (--env / -e)
+eval "$("$program" --env --include-identifiers)"
+if [ -z "${HW_ID:-}" ] || [ ${#HW_ID} -ne 64 ]; then
+    echo "HW_ID missing or invalid from --env" >&2
+    exit 1
+fi
+if [ -z "${HW_DISTRO_NAME:-}" ]; then
+    echo "HW_DISTRO_NAME missing from --env" >&2
+    exit 1
+fi
+
+# 4. Teste de modo rápido (--fast) e modo ASCII (--ascii)
 "$program" --fast --ascii --no-color >/dev/null
 
-# 4. Teste de opção desconhecida
+# 5. Teste de opção desconhecida
 if "$program" --invalid-option >/dev/null 2>&1; then
     echo "unknown option was accepted" >&2
     exit 1
 fi
 
-echo "CLI, Flags and JSON: OK"
+echo "CLI, Flags, ENV and JSON: OK"

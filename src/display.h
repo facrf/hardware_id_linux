@@ -17,7 +17,7 @@ void display_system_panel(const SysInfo *info, int width);
 void display_cpu_panel(const CpuInfo *info, int width);
 void display_memory_panel(const MemInfo *info, int width);
 void display_gpu_panel(const GpuInfo *info, int width);
-void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int width);
+void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int width, int include_identifiers);
 void display_network_panel(const NetInfo *net, const BtInfo *bt, int width, int include_identifiers);
 void display_footer(int width);
 

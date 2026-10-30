@@ -6,6 +6,7 @@
 #include "collectors.h"
 #include "display.h"
 #include "json_export.h"
+#include "env_export.h"
 #include "version.h"
 
 static volatile sig_atomic_t g_keep_running = 1;
@@ -17,6 +18,7 @@ static void handle_sigint(int sig) {
 
 int main(int argc, char *argv[]) {
     int json_mode = 0;
+    int env_mode = 0;
     int include_identifiers = 0;
     int color_mode = -1;
     int only_id_mode = 0;
@@ -32,6 +34,7 @@ int main(int argc, char *argv[]) {
             printf("Coleta e exibe informações completas de hardware, DMI e sistema operacional.\n\n");
             printf("Opções de Saída:\n");
             printf("  -j, --json              Exporta os dados coletados em formato JSON estruturado\n");
+            printf("  -e, --env               Exporta os dados como variáveis de ambiente (KEY=\"VALUE\")\n");
             printf("  -s, --only-id           Exibe apenas o hash SHA-256 do Hardware ID e sai\n");
             printf("      --uuid              Exibe apenas o Machine UUID canônico e sai\n");
             printf("  -f, --fast              Modo rápido: pula amostragem de uso de CPU (200ms)\n");
@@ -50,6 +53,9 @@ int main(int argc, char *argv[]) {
             return 0;
         } else if (strcmp(argv[i], "--json") == 0 || strcmp(argv[i], "-j") == 0) {
             json_mode = 1;
+        } else if (strcmp(argv[i], "--env") == 0 || strcmp(argv[i], "-e") == 0) {
+            env_mode = 1;
+            fast_mode = 1;
         } else if (strcmp(argv[i], "--only-id") == 0 || strcmp(argv[i], "-s") == 0) {
             only_id_mode = 1;
             fast_mode = 1;
@@ -128,6 +134,13 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    // Modo Variáveis de Ambiente (--env / -e)
+    if (env_mode) {
+        export_env(stdout, &sys_info, &hw_id_info, &cpu_info, &mem_info,
+                   &net_info, include_identifiers);
+        return 0;
+    }
+
     // Configuração de cores e largura do terminal para modo TUI
     if (color_mode < 0) color_mode = isatty(STDOUT_FILENO) && getenv("NO_COLOR") == NULL;
     set_color_enabled(color_mode);
@@ -156,7 +169,7 @@ int main(int argc, char *argv[]) {
             display_cpu_panel(&cpu_info, width);
             display_memory_panel(&mem_info, width);
             display_gpu_panel(&gpu_info, width);
-            display_storage_panel(&disk_info, &mount_info, width);
+            display_storage_panel(&disk_info, &mount_info, width, include_identifiers);
             display_network_panel(&net_info, &bt_info, width, include_identifiers);
             display_footer(width);
             fflush(stdout);
@@ -192,7 +205,7 @@ int main(int argc, char *argv[]) {
     display_cpu_panel(&cpu_info, width);
     display_memory_panel(&mem_info, width);
     display_gpu_panel(&gpu_info, width);
-    display_storage_panel(&disk_info, &mount_info, width);
+    display_storage_panel(&disk_info, &mount_info, width, include_identifiers);
     display_network_panel(&net_info, &bt_info, width, include_identifiers);
     display_footer(width);
 

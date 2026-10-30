@@ -12,7 +12,7 @@ PREFIX ?= /usr/local
 DESTDIR ?=
 
 # Fontes e objetos
-SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/collectors.c $(SRC_DIR)/display.c $(SRC_DIR)/sha256.c $(SRC_DIR)/json_export.c
+SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/collectors.c $(SRC_DIR)/display.c $(SRC_DIR)/sha256.c $(SRC_DIR)/json_export.c $(SRC_DIR)/env_export.c
 OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Alvo padrão
@@ -55,10 +55,11 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/hardware_id.1
 
 .PHONY: test
-test: all tests/test_sha256 tests/test_collectors tests/test_json
+test: all tests/test_sha256 tests/test_collectors tests/test_json tests/test_env
 	./tests/test_sha256
 	./tests/test_collectors
 	./tests/test_json
+	./tests/test_env
 	sh tests/test_cli.sh ./$(TARGET)
 
 tests/test_sha256: tests/test_sha256.c $(SRC_DIR)/sha256.c $(SRC_DIR)/sha256.h
@@ -69,3 +70,6 @@ tests/test_collectors: tests/test_collectors.c $(SRC_DIR)/collectors.c $(SRC_DIR
 
 tests/test_json: tests/test_json.c $(SRC_DIR)/json_export.c
 	$(CC) $(CFLAGS) -I$(SRC_DIR) -o $@ tests/test_json.c $(SRC_DIR)/json_export.c
+
+tests/test_env: tests/test_env.c $(SRC_DIR)/env_export.c
+	$(CC) $(CFLAGS) -I$(SRC_DIR) -o $@ tests/test_env.c $(SRC_DIR)/env_export.c

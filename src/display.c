@@ -265,6 +265,13 @@ void display_hardware_id_panel(const HardwareIdInfo *info, int width, int includ
     snprintf(bios, sizeof(bios), "%s v%s (%s)", info->bios_vendor, info->bios_version, info->bios_date);
     draw_kv("BIOS / UEFI", bios, width);
 
+    if (info->product_serial[0]) {
+        draw_kv("Serial Produto", include_identifiers ? info->product_serial : "<redacted>", width);
+    }
+    if (info->board_serial[0]) {
+        draw_kv("Serial Placa", include_identifiers ? info->board_serial : "<redacted>", width);
+    }
+
     draw_box_bottom(width);
 }
 
@@ -441,7 +448,7 @@ void display_gpu_panel(const GpuInfo *info, int width) {
     draw_box_bottom(width);
 }
 
-void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int width) {
+void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int width, int include_identifiers) {
     draw_box_top(" Armazenamento", width);
     
     // Subseção: Dispositivos Físicos
@@ -451,7 +458,13 @@ void display_storage_panel(const DiskInfo *disks, const MountInfo *mounts, int w
         format_bytes(disks->disks[i].size_bytes, buf_size, sizeof(buf_size));
         
         char disk_info[256];
-        snprintf(disk_info, sizeof(disk_info), "%s [%s] - %s", disks->disks[i].model, disks->disks[i].type, buf_size);
+        if (strcmp(disks->disks[i].serial, "N/A") != 0 && disks->disks[i].serial[0] != '\0') {
+            snprintf(disk_info, sizeof(disk_info), "%s [%s] - %s (S/N: %s)",
+                     disks->disks[i].model, disks->disks[i].type, buf_size,
+                     include_identifiers ? disks->disks[i].serial : "<redacted>");
+        } else {
+            snprintf(disk_info, sizeof(disk_info), "%s [%s] - %s", disks->disks[i].model, disks->disks[i].type, buf_size);
+        }
         draw_kv(disks->disks[i].device, disk_info, width);
     }
     
@@ -482,6 +495,14 @@ void display_network_panel(const NetInfo *net, const BtInfo *bt, int width, int 
     /* ─── Interfaces de Rede ─── */
     draw_section_header("=== Interfaces de Rede ===", width);
 
+    if (net->default_gateway[0] != '\0') {
+        char gw_info[128];
+        snprintf(gw_info, sizeof(gw_info), "%s (via %s)",
+                 include_identifiers ? net->default_gateway : "<redacted>", net->default_iface);
+        draw_kv("Gateway Padrão", gw_info, width);
+        draw_separator(width);
+    }
+
     if (net->count == 0) {
         draw_kv("Status", "Nenhuma interface detectada", width);
     } else {
@@ -498,12 +519,13 @@ void display_network_panel(const NetInfo *net, const BtInfo *bt, int width, int 
             if (iface->is_virtual && strcmp(iface->name, "lo") != 0) continue;
 
             char main_info[256];
+            const char *gw_tag = iface->is_default_gateway ? " [Rota Padrão]" : "";
             if (iface->speed_mbps > 0) {
-                snprintf(main_info, sizeof(main_info), "%s [%s] %s (%llu Mbps)",
-                         iface->type_desc, iface->state, include_identifiers ? iface->mac : "<redacted>", iface->speed_mbps);
+                snprintf(main_info, sizeof(main_info), "%s [%s] %s (%llu Mbps)%s",
+                         iface->type_desc, iface->state, include_identifiers ? iface->mac : "<redacted>", iface->speed_mbps, gw_tag);
             } else {
-                snprintf(main_info, sizeof(main_info), "%s [%s] %s",
-                         iface->type_desc, iface->state, include_identifiers ? iface->mac : "<redacted>");
+                snprintf(main_info, sizeof(main_info), "%s [%s] %s%s",
+                         iface->type_desc, iface->state, include_identifiers ? iface->mac : "<redacted>", gw_tag);
             }
             draw_kv(iface->name, main_info, width);
 

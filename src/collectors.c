@@ -282,6 +282,8 @@ void collect_hardware_id_info(HardwareIdInfo *info, const CpuInfo *cpu, const Ne
     safe_read_file("/sys/class/dmi/id/bios_vendor", info->bios_vendor, sizeof(info->bios_vendor));
     safe_read_file("/sys/class/dmi/id/bios_version", info->bios_version, sizeof(info->bios_version));
     safe_read_file("/sys/class/dmi/id/bios_date", info->bios_date, sizeof(info->bios_date));
+    safe_read_file("/sys/class/dmi/id/product_serial", info->product_serial, sizeof(info->product_serial));
+    safe_read_file("/sys/class/dmi/id/board_serial", info->board_serial, sizeof(info->board_serial));
 
     if (!info->sys_vendor[0]) snprintf(info->sys_vendor, sizeof(info->sys_vendor), "Desconhecido");
     if (!info->product_name[0]) snprintf(info->product_name, sizeof(info->product_name), "Desconhecido");
@@ -814,6 +816,24 @@ void collect_disk_info(DiskInfo *info) {
             disk->size_bytes = strtoull(size_str, NULL, 10) * 512ULL;
         }
 
+        // Leitura de número de série / WWID do dispositivo
+        char serial_path[512], serial_str[64] = {0};
+        snprintf(serial_path, sizeof(serial_path), "/sys/block/%s/device/serial", dn);
+        safe_read_file(serial_path, serial_str, sizeof(serial_str));
+        if (!serial_str[0]) {
+            snprintf(serial_path, sizeof(serial_path), "/sys/block/%s/serial", dn);
+            safe_read_file(serial_path, serial_str, sizeof(serial_str));
+        }
+        if (!serial_str[0]) {
+            snprintf(serial_path, sizeof(serial_path), "/sys/block/%s/device/wwid", dn);
+            safe_read_file(serial_path, serial_str, sizeof(serial_str));
+        }
+        if (serial_str[0]) {
+            snprintf(disk->serial, sizeof(disk->serial), "%s", serial_str);
+        } else {
+            snprintf(disk->serial, sizeof(disk->serial), "N/A");
+        }
+
         info->count++;
     }
     closedir(d);
@@ -1035,6 +1055,38 @@ void collect_net_info(NetInfo *info) {
             }
         }
         freeifaddrs(ifaddr);
+    }
+
+    /* Detecta o Gateway Padrão e a Interface Padrão via /proc/net/route */
+    FILE *rf = fopen("/proc/net/route", "r");
+    if (rf) {
+        char rline[256];
+        // Pula o cabeçalho
+        if (fgets(rline, sizeof(rline), rf)) {
+            while (fgets(rline, sizeof(rline), rf)) {
+                char iface_name[64];
+                unsigned int dest = 0, gateway = 0, flags = 0;
+                if (sscanf(rline, "%63s %x %x %x", iface_name, &dest, &gateway, &flags) >= 4) {
+                    // Rota padrão possui Destination == 0, flag RTF_GATEWAY (0x2) e gateway != 0
+                    if (dest == 0 && (flags & 0x2) && gateway != 0) {
+                        snprintf(info->default_iface, sizeof(info->default_iface), "%s", iface_name);
+                        struct in_addr gw_addr;
+                        gw_addr.s_addr = gateway;
+                        inet_ntop(AF_INET, &gw_addr, info->default_gateway, sizeof(info->default_gateway));
+
+                        // Marca a interface correspondente
+                        for (int i = 0; i < info->count; i++) {
+                            if (strcmp(info->interfaces[i].name, iface_name) == 0) {
+                                info->interfaces[i].is_default_gateway = 1;
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        fclose(rf);
     }
 }
 

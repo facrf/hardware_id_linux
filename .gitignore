@@ -57,6 +57,7 @@ scratch/
 /tests/test_sha256
 /tests/test_collectors
 /tests/test_json
+/tests/test_env
 .cache/
 *.dSYM/
 *.su
