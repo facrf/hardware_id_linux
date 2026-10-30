@@ -46,10 +46,13 @@ debug: clean all
 install: all
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+	install -d $(DESTDIR)$(PREFIX)/share/man/man1
+	install -m 644 docs/hardware_id.1 $(DESTDIR)$(PREFIX)/share/man/man1/hardware_id.1
 
 .PHONY: uninstall
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/hardware_id.1
 
 .PHONY: test
 test: all tests/test_sha256 tests/test_collectors tests/test_json

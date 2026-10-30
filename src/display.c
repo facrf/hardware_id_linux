@@ -9,9 +9,14 @@
 #include "version.h"
 
 int hardware_id_color_enabled = 1;
+int hardware_id_ascii_mode = 0;
 
 void set_color_enabled(int enabled) {
     hardware_id_color_enabled = enabled != 0;
+}
+
+void set_ascii_mode(int enabled) {
+    hardware_id_ascii_mode = enabled != 0;
 }
 
 // Função auxiliar para contar o tamanho visível (ignora sequências ANSI e calcula caracteres UTF-8)
@@ -53,33 +58,49 @@ const char *usage_color(double percent) {
     return RED;
 }
 
+const char *temp_color(double temp) {
+    if (temp < 60.0) return GREEN;
+    if (temp < 80.0) return YELLOW;
+    return RED;
+}
+
 void draw_box_top(const char *title, int width) {
     int title_len = visible_len(title);
     int used_len = 5 + title_len + 1; // "╭─── " (5) + título + " " (1)
     int remain = width - used_len - 1; // -1 para "╮"
     if (remain < 0) remain = 0;
     
-    printf("%s╭─── %s%s%s%s%s %s", BCYAN, RST, BYELLOW, BOLD, title, RST, BCYAN);
+    const char *tl = hardware_id_ascii_mode ? "+" : "╭";
+    const char *tr = hardware_id_ascii_mode ? "+" : "╮";
+    const char *hl = hardware_id_ascii_mode ? "-" : "─";
+
+    printf("%s%s%s%s%s %s%s%s%s%s %s", BCYAN, tl, hl, hl, hl, RST, BYELLOW, BOLD, title, RST, BCYAN);
     for (int i = 0; i < remain; i++) {
-        printf("─");
+        printf("%s", hl);
     }
-    printf("╮%s\n", RST);
+    printf("%s%s\n", tr, RST);
 }
 
 void draw_box_bottom(int width) {
-    printf("%s╰", BCYAN);
+    const char *bl = hardware_id_ascii_mode ? "+" : "╰";
+    const char *br = hardware_id_ascii_mode ? "+" : "╯";
+    const char *hl = hardware_id_ascii_mode ? "-" : "─";
+    printf("%s%s", BCYAN, bl);
     for (int i = 0; i < width - 2; i++) {
-        printf("─");
+        printf("%s", hl);
     }
-    printf("╯%s\n", RST);
+    printf("%s%s\n", br, RST);
 }
 
 void draw_separator(int width) {
-    printf("%s%s├", DIM, BCYAN);
+    const char *ml = hardware_id_ascii_mode ? "+" : "├";
+    const char *mr = hardware_id_ascii_mode ? "+" : "┤";
+    const char *hl = hardware_id_ascii_mode ? "-" : "─";
+    printf("%s%s%s", DIM, BCYAN, ml);
     for (int i = 0; i < width - 2; i++) {
-        printf("─");
+        printf("%s", hl);
     }
-    printf("┤%s\n", RST);
+    printf("%s%s\n", mr, RST);
 }
 
 void draw_section_header(const char *title, int width) {
@@ -89,11 +110,12 @@ void draw_section_header(const char *title, int width) {
     int pad_len = width - used_len - 2; // -2 para " │"
     if (pad_len < 0) pad_len = 0;
 
-    printf("%s│  %s%s%s%s", BCYAN, RST, BCYAN, title, RST);
+    const char *vb = hardware_id_ascii_mode ? "|" : "│";
+    printf("%s%s  %s%s%s%s", BCYAN, vb, RST, BCYAN, title, RST);
     for (int i = 0; i < pad_len; i++) {
         putchar(' ');
     }
-    printf("%s │%s\n", BCYAN, RST);
+    printf("%s %s%s\n", BCYAN, vb, RST);
 }
 
 void draw_kv(const char *key, const char *value, int width) {
@@ -104,20 +126,61 @@ void draw_kv(const char *key, const char *value, int width) {
     int key_pad = (key_vis < 18) ? (18 - key_vis) : 0;
     int key_col = (key_vis < 18) ? 18 : key_vis;
 
-    int val_len = visible_len(value);
-    int used_len = 3 + key_col + 3 + val_len; // "│  " (3) + key_col + " : " (3) + value
-    int pad_len = width - used_len - 2; // -2 para " │"
+    int prefix_len = 3 + key_col + 3; // "│  " (3) + key_col + " : " (3)
+    int max_val_len = width - prefix_len - 2; // -2 para " │"
+    if (max_val_len < 0) max_val_len = 0;
+
+    int val_vis = visible_len(value);
+    char safe_val[512];
+    const char *val_to_print = value;
+
+    // Truncamento seguro contra overflow de borda em larguras pequenas
+    if (val_vis > max_val_len && max_val_len >= 4) {
+        int target_vis = max_val_len - 3; // reserva 3 caracteres para "..."
+        int cur_vis = 0;
+        int in_ansi = 0;
+        size_t i = 0, out_idx = 0;
+        while (value[i] && out_idx < sizeof(safe_val) - 8) {
+            if (value[i] == '\033') {
+                in_ansi = 1;
+                safe_val[out_idx++] = value[i++];
+            } else if (in_ansi) {
+                safe_val[out_idx++] = value[i];
+                if (value[i] == 'm') in_ansi = 0;
+                i++;
+            } else {
+                if ((value[i] & 0xC0) != 0x80) {
+                    if (cur_vis >= target_vis) break;
+                    cur_vis++;
+                }
+                safe_val[out_idx++] = value[i++];
+            }
+        }
+        safe_val[out_idx++] = '.';
+        safe_val[out_idx++] = '.';
+        safe_val[out_idx++] = '.';
+        if (in_ansi) {
+            memcpy(safe_val + out_idx, "\033[0m", 4);
+            out_idx += 4;
+        }
+        safe_val[out_idx] = '\0';
+        val_to_print = safe_val;
+        val_vis = cur_vis + 3;
+    }
+
+    int pad_len = width - (prefix_len + val_vis) - 2; // -2 para " │"
     if (pad_len < 0) pad_len = 0;
 
-    printf("%s│  %s%s%s", BCYAN, RST, BYELLOW, key);
+    const char *vb = hardware_id_ascii_mode ? "|" : "│";
+    printf("%s%s  %s%s%s", BCYAN, vb, BYELLOW, key, RST);
     for (int i = 0; i < key_pad; i++) {
         putchar(' ');
     }
-    printf("%s : %s%s%s", RST, BWHITE, value, RST);
+    printf("%s : %s%s%s", RST, BWHITE, val_to_print, RST);
     for (int i = 0; i < pad_len; i++) {
         putchar(' ');
     }
-    printf("%s │%s\n", BCYAN, RST);
+    printf("%s %s%s\n", BCYAN, vb, RST);
 }
 
 void draw_progress_bar(const char *label, double percent, int width) {
@@ -136,14 +199,17 @@ void draw_progress_bar(const char *label, double percent, int width) {
     snprintf(padded_label, sizeof(padded_label), "%-18s", label);
     
     const char *color = usage_color(percent);
-    
-    printf("%s│  %s%s%s%s : %s[", BCYAN, RST, BYELLOW, padded_label, RST, BCYAN);
+    const char *vb = hardware_id_ascii_mode ? "|" : "│";
+    const char *bf = hardware_id_ascii_mode ? "#" : "█";
+    const char *be = hardware_id_ascii_mode ? "-" : "░";
+
+    printf("%s%s  %s%s%s%s : %s[", BCYAN, vb, RST, BYELLOW, padded_label, RST, BCYAN);
     
     printf("%s", color);
-    for (int i = 0; i < filled; i++) printf("█");
+    for (int i = 0; i < filled; i++) printf("%s", bf);
     
     printf("%s%s", RST, DIM);
-    for (int i = 0; i < empty; i++) printf("░");
+    for (int i = 0; i < empty; i++) printf("%s", be);
     
     printf("%s%s] %s%5.1f%%%s", RST, BCYAN, color, percent, RST);
     
@@ -152,25 +218,30 @@ void draw_progress_bar(const char *label, double percent, int width) {
     if (remain < 0) remain = 0;
     
     for (int i = 0; i < remain; i++) printf(" ");
-    printf("%s │%s\n", BCYAN, RST);
+    printf("%s %s%s\n", BCYAN, vb, RST);
 }
 
 void display_header(int width) {
+    const char *tl = hardware_id_ascii_mode ? "+" : "╭";
+    const char *tr = hardware_id_ascii_mode ? "+" : "╮";
+    const char *hl = hardware_id_ascii_mode ? "-" : "─";
+    const char *vb = hardware_id_ascii_mode ? "|" : "│";
+
     printf("\n");
-    printf("%s╭", BCYAN);
-    for (int i = 0; i < width - 2; i++) printf("─");
-    printf("╮%s\n", RST);
+    printf("%s%s", BCYAN, tl);
+    for (int i = 0; i < width - 2; i++) printf("%s", hl);
+    printf("%s%s\n", tr, RST);
     
     const char *title = "HARDWARE ID — Inspetor de Sistema Linux";
     int t_len = visible_len(title);
     int pad_left = (width - 2 - t_len) / 2;
     int pad_right = width - 2 - t_len - pad_left;
     
-    printf("%s│%s", BCYAN, RST);
+    printf("%s%s%s", BCYAN, vb, RST);
     for (int i = 0; i < pad_left; i++) printf(" ");
     printf("%s%s%s%s", BWHITE, BOLD, title, RST);
     for (int i = 0; i < pad_right; i++) printf(" ");
-    printf("%s│%s\n", BCYAN, RST);
+    printf("%s%s%s\n", BCYAN, vb, RST);
     
     draw_box_bottom(width);
 }
@@ -208,6 +279,7 @@ void display_system_panel(const SysInfo *info, int width) {
     snprintf(kernel, sizeof(kernel), "%s (%s)", info->kernel_version, info->architecture);
     draw_kv("Kernel", kernel, width);
     
+    draw_kv("Ambiente", info->virtualization, width);
     draw_kv("Hostname", info->hostname, width);
     draw_kv("Usuário", info->username, width);
     draw_kv("Uptime", info->uptime_formatted, width);
@@ -236,6 +308,12 @@ void display_cpu_panel(const CpuInfo *info, int width) {
     }
     draw_kv("Frequência", freq, width);
     
+    if (info->temp_celsius > 0.0) {
+        char temp_str[64];
+        snprintf(temp_str, sizeof(temp_str), "%.1f °C", info->temp_celsius);
+        draw_kv("Temperatura", temp_str, width);
+    }
+
     char cache[256];
     snprintf(cache, sizeof(cache), "L1d: %s | L1i: %s | L2: %s | L3: %s", info->cache_l1d, info->cache_l1i, info->cache_l2, info->cache_l3);
     draw_kv("Cache", cache, width);
@@ -244,9 +322,13 @@ void display_cpu_panel(const CpuInfo *info, int width) {
     draw_progress_bar("Uso Total", info->usage_total, width);
     
     // Per-core display in columns (responsivo para larguras menores como 80 colunas)
+    const char *vb = hardware_id_ascii_mode ? "|" : "│";
+    const char *bf = hardware_id_ascii_mode ? "#" : "█";
+    const char *be = hardware_id_ascii_mode ? "-" : "░";
+
     int cols = (width >= 86) ? 4 : (width >= 66 ? 3 : 2);
     for (int i = 0; i < info->num_cores_sampled; i += cols) {
-        printf("%s│  %s", BCYAN, RST);
+        printf("%s%s  %s", BCYAN, vb, RST);
         int printed_chars = 3; // "│  "
         
         for (int j = 0; j < cols && i + j < info->num_cores_sampled; j++) {
@@ -264,9 +346,9 @@ void display_cpu_panel(const CpuInfo *info, int width) {
             if (filled < 0) filled = 0;
             
             printf("%s", c);
-            for(int k = 0; k < filled; k++) printf("█");
+            for(int k = 0; k < filled; k++) printf("%s", bf);
             printf("%s%s", RST, DIM);
-            for(int k = 0; k < bar_size - filled; k++) printf("░");
+            for(int k = 0; k < bar_size - filled; k++) printf("%s", be);
             
             printf("%s %3.0f%%   ", RST, p);
             
@@ -277,7 +359,7 @@ void display_cpu_panel(const CpuInfo *info, int width) {
         int pad = width - printed_chars - 2; // -2 para " │"
         if (pad < 0) pad = 0;
         for (int k = 0; k < pad; k++) printf(" ");
-        printf("%s │%s\n", BCYAN, RST);
+        printf("%s %s%s\n", BCYAN, vb, RST);
     }
     
     draw_box_bottom(width);
@@ -294,9 +376,17 @@ void display_memory_panel(const MemInfo *info, int width) {
     format_kb(info->buffers_kb, buf_buf, sizeof(buf_buf));
     format_kb(info->cached_kb, buf_cache, sizeof(buf_cache));
     
-    char ram_stats[256];
-    snprintf(ram_stats, sizeof(ram_stats), "Total: %s | Usada: %s | Livre: %s | Disp: %s", buf_total, buf_used, buf_free, buf_avail);
-    draw_kv("Status RAM", ram_stats, width);
+    if (width < 90) {
+        char ram_stats1[128], ram_stats2[128];
+        snprintf(ram_stats1, sizeof(ram_stats1), "Total: %s | Usada: %s", buf_total, buf_used);
+        snprintf(ram_stats2, sizeof(ram_stats2), "Livre: %s | Disp: %s", buf_free, buf_avail);
+        draw_kv("Status RAM", ram_stats1, width);
+        draw_kv("", ram_stats2, width);
+    } else {
+        char ram_stats[256];
+        snprintf(ram_stats, sizeof(ram_stats), "Total: %s | Usada: %s | Livre: %s | Disp: %s", buf_total, buf_used, buf_free, buf_avail);
+        draw_kv("Status RAM", ram_stats, width);
+    }
     
     char ram_extra[256];
     snprintf(ram_extra, sizeof(ram_extra), "Buffers: %s | Cached: %s", buf_buf, buf_cache);

@@ -66,9 +66,114 @@ void format_kb(unsigned long long kb, char *buf, size_t buf_size) {
     format_bytes(kb * 1024ULL, buf, buf_size);
 }
 
+// Detecta se o sistema está rodando em máquina física (bare metal), contêiner ou máquina virtual
+static void detect_virtualization(char *virt, size_t size) {
+    if (!virt || size == 0) return;
+    virt[0] = '\0';
+
+    // 1. Contêineres
+    if (access("/.dockerenv", F_OK) == 0) {
+        snprintf(virt, size, "Docker (Contêiner)");
+        return;
+    }
+    if (access("/run/.containerenv", F_OK) == 0) {
+        snprintf(virt, size, "Podman (Contêiner)");
+        return;
+    }
+
+    char cgroup_buf[1024];
+    safe_read_file("/proc/1/cgroup", cgroup_buf, sizeof(cgroup_buf));
+    if (strstr(cgroup_buf, "docker") != NULL) {
+        snprintf(virt, size, "Docker (Contêiner)");
+        return;
+    }
+    if (strstr(cgroup_buf, "kubepods") != NULL) {
+        snprintf(virt, size, "Kubernetes (Pod)");
+        return;
+    }
+    if (strstr(cgroup_buf, "containerd") != NULL) {
+        snprintf(virt, size, "Containerd (Contêiner)");
+        return;
+    }
+    if (strstr(cgroup_buf, "lxc") != NULL) {
+        snprintf(virt, size, "LXC (Contêiner)");
+        return;
+    }
+
+    char environ_buf[1024];
+    safe_read_file("/proc/1/environ", environ_buf, sizeof(environ_buf));
+    if (strstr(environ_buf, "container=lxc") != NULL) {
+        snprintf(virt, size, "LXC (Contêiner)");
+        return;
+    }
+
+    // 2. WSL (Windows Subsystem for Linux)
+    char ver_buf[512];
+    safe_read_file("/proc/version", ver_buf, sizeof(ver_buf));
+    if (strstr(ver_buf, "microsoft") != NULL || strstr(ver_buf, "WSL") != NULL) {
+        snprintf(virt, size, "WSL2 (Windows Subsystem for Linux)");
+        return;
+    }
+
+    // 3. DMI / SMBIOS para detecção de Hipervisor / VM
+    char dmi_sys[128] = {0}, dmi_prod[128] = {0}, dmi_bios[128] = {0};
+    safe_read_file("/sys/class/dmi/id/sys_vendor", dmi_sys, sizeof(dmi_sys));
+    safe_read_file("/sys/class/dmi/id/product_name", dmi_prod, sizeof(dmi_prod));
+    safe_read_file("/sys/class/dmi/id/bios_vendor", dmi_bios, sizeof(dmi_bios));
+
+    if (strstr(dmi_sys, "QEMU") != NULL || strstr(dmi_prod, "KVM") != NULL ||
+        strstr(dmi_bios, "QEMU") != NULL || strstr(dmi_sys, "Bochs") != NULL) {
+        snprintf(virt, size, "QEMU / KVM (Máquina Virtual)");
+        return;
+    }
+    if (strstr(dmi_sys, "VMware") != NULL || strstr(dmi_prod, "VMware") != NULL) {
+        snprintf(virt, size, "VMware (Máquina Virtual)");
+        return;
+    }
+    if (strstr(dmi_sys, "innotek") != NULL || strstr(dmi_prod, "VirtualBox") != NULL ||
+        strstr(dmi_bios, "innotek") != NULL) {
+        snprintf(virt, size, "VirtualBox (Máquina Virtual)");
+        return;
+    }
+    if (strstr(dmi_sys, "Microsoft Corporation") != NULL && strstr(dmi_prod, "Virtual Machine") != NULL) {
+        snprintf(virt, size, "Hyper-V (Máquina Virtual)");
+        return;
+    }
+    if (strstr(dmi_sys, "Amazon EC2") != NULL) {
+        snprintf(virt, size, "AWS EC2 (Nitro/Xen)");
+        return;
+    }
+    if (strstr(dmi_sys, "Google") != NULL && strstr(dmi_prod, "Compute Engine") != NULL) {
+        snprintf(virt, size, "Google Cloud (Compute Engine)");
+        return;
+    }
+    if (strstr(dmi_sys, "OpenStack") != NULL || strstr(dmi_prod, "OpenStack") != NULL) {
+        snprintf(virt, size, "OpenStack (Cloud VM)");
+        return;
+    }
+    if (strstr(dmi_sys, "Parallels") != NULL || strstr(dmi_prod, "Parallels") != NULL) {
+        snprintf(virt, size, "Parallels (Máquina Virtual)");
+        return;
+    }
+    if (access("/proc/xen", F_OK) == 0 || strstr(dmi_bios, "Xen") != NULL) {
+        snprintf(virt, size, "Xen (Máquina Virtual)");
+        return;
+    }
+
+    char hyp_type[64] = {0};
+    safe_read_file("/sys/hypervisor/type", hyp_type, sizeof(hyp_type));
+    if (hyp_type[0] != '\0') {
+        snprintf(virt, size, "%s (Hipervisor)", hyp_type);
+        return;
+    }
+
+    snprintf(virt, size, "Máquina Física (Bare Metal)");
+}
+
 // Coleta informações gerais do sistema
 void collect_system_info(SysInfo *info) {
     memset(info, 0, sizeof(*info));
+    detect_virtualization(info->virtualization, sizeof(info->virtualization));
     
     // Ler informações da distribuição (/etc/os-release com fallback para /usr/lib/os-release)
     FILE *f = fopen("/etc/os-release", "r");
@@ -186,6 +291,22 @@ void collect_hardware_id_info(HardwareIdInfo *info, const CpuInfo *cpu, const Ne
     if (!info->bios_version[0]) snprintf(info->bios_version, sizeof(info->bios_version), "Desconhecido");
     if (!info->bios_date[0]) snprintf(info->bios_date, sizeof(info->bios_date), "Desconhecido");
 
+    // Fallback para arquiteturas ARM/DeviceTree (ex.: Raspberry Pi, Orange Pi)
+    if (strcmp(info->sys_vendor, "Desconhecido") == 0 && strcmp(info->product_name, "Desconhecido") == 0) {
+        char dt_model[128] = {0};
+        safe_read_file("/sys/firmware/devicetree/base/model", dt_model, sizeof(dt_model));
+        if (dt_model[0]) {
+            snprintf(info->product_name, sizeof(info->product_name), "%s", dt_model);
+            snprintf(info->sys_vendor, sizeof(info->sys_vendor), "DeviceTree");
+            snprintf(info->board_name, sizeof(info->board_name), "%s", dt_model);
+        }
+        char dt_serial[64] = {0};
+        safe_read_file("/sys/firmware/devicetree/base/serial-number", dt_serial, sizeof(dt_serial));
+        if (dt_serial[0]) {
+            snprintf(info->product_uuid, sizeof(info->product_uuid), "%s", dt_serial);
+        }
+    }
+
     // 2. Machine ID do Sistema (/etc/machine-id)
     safe_read_file("/etc/machine-id", info->machine_id, sizeof(info->machine_id));
     if (!info->machine_id[0]) {
@@ -286,9 +407,51 @@ static void read_cpu_stats(struct CpuStat *total, struct CpuStat cores[], int *n
     fclose(f);
 }
 
-// Coleta informações detalhadas do processador
-void collect_cpu_info(CpuInfo *info) {
+// Lê a temperatura atual da CPU/pacote a partir de /sys/class/thermal ou /sys/class/hwmon
+static double read_cpu_temp(void) {
+    char path[256], type[64], val_str[32];
+    for (int i = 0; i < 16; i++) {
+        snprintf(path, sizeof(path), "/sys/class/thermal/thermal_zone%d/type", i);
+        if (access(path, F_OK) != 0) break;
+        safe_read_file(path, type, sizeof(type));
+        if (strstr(type, "x86_pkg") || strstr(type, "coretemp") ||
+            strstr(type, "cpu") || strstr(type, "k10temp") || strstr(type, "soc_thermal")) {
+            snprintf(path, sizeof(path), "/sys/class/thermal/thermal_zone%d/temp", i);
+            safe_read_file(path, val_str, sizeof(val_str));
+            if (val_str[0]) {
+                double temp = atof(val_str) / 1000.0;
+                if (temp > 0.0 && temp < 150.0) return temp;
+            }
+        }
+    }
+
+    safe_read_file("/sys/class/thermal/thermal_zone0/temp", val_str, sizeof(val_str));
+    if (val_str[0]) {
+        double temp = atof(val_str) / 1000.0;
+        if (temp > 0.0 && temp < 150.0) return temp;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        snprintf(path, sizeof(path), "/sys/class/hwmon/hwmon%d/name", i);
+        if (access(path, F_OK) != 0) continue;
+        safe_read_file(path, type, sizeof(type));
+        if (strstr(type, "coretemp") || strstr(type, "k10temp") || strstr(type, "cpu")) {
+            snprintf(path, sizeof(path), "/sys/class/hwmon/hwmon%d/temp1_input", i);
+            safe_read_file(path, val_str, sizeof(val_str));
+            if (val_str[0]) {
+                double temp = atof(val_str) / 1000.0;
+                if (temp > 0.0 && temp < 150.0) return temp;
+            }
+        }
+    }
+
+    return -1.0;
+}
+
+// Coleta informações detalhadas do processador (com opção de fast_mode)
+void collect_cpu_info_ex(CpuInfo *info, int fast_mode) {
     memset(info, 0, sizeof(*info));
+    info->temp_celsius = read_cpu_temp();
 
     // Lógica para contar núcleos lógicos e físicos, além do modelo
     int phys_ids[MAX_CORES];
@@ -409,6 +572,12 @@ void collect_cpu_info(CpuInfo *info) {
     }
 
     // Uso de CPU
+    if (fast_mode) {
+        info->usage_total = 0.0;
+        info->num_cores_sampled = 0;
+        return;
+    }
+
     struct CpuStat total1, total2;
     struct CpuStat cores1[MAX_CORES], cores2[MAX_CORES];
     int num_cores1 = 0, num_cores2 = 0, truncated1 = 0, truncated2 = 0;
@@ -447,6 +616,11 @@ void collect_cpu_info(CpuInfo *info) {
             info->usage_per_core[i] = 0.0;
         }
     }
+}
+
+// Wrapper padrão para manter compatibilidade binária/assinatura
+void collect_cpu_info(CpuInfo *info) {
+    collect_cpu_info_ex(info, 0);
 }
 
 // Coleta estatísticas de memória RAM e Swap
@@ -536,7 +710,7 @@ void collect_gpu_info(GpuInfo *info) {
         char class_str[32];
         safe_read_file(class_path, class_str, sizeof(class_str));
         
-        if (strncmp(class_str, "0x0300", 6) == 0 || strncmp(class_str, "0x0302", 6) == 0) {
+        if (strncmp(class_str, "0x0300", 6) == 0 || strncmp(class_str, "0x0302", 6) == 0 || strncmp(class_str, "0x0380", 6) == 0) {
             if (info->count >= MAX_GPUS) { info->truncated = 1; break; }
             GpuEntry *gpu = &info->gpus[info->count];
             snprintf(gpu->pci_slot, sizeof(gpu->pci_slot), "%s", dir->d_name);
@@ -553,6 +727,13 @@ void collect_gpu_info(GpuInfo *info) {
             if (strncmp(vendor_str, "0x10de", 6) == 0) vendor_name = "NVIDIA";
             else if (strncmp(vendor_str, "0x1002", 6) == 0) vendor_name = "AMD/ATI";
             else if (strncmp(vendor_str, "0x8086", 6) == 0) vendor_name = "Intel";
+            else if (strncmp(vendor_str, "0x1af4", 6) == 0) vendor_name = "VirtIO";
+            else if (strncmp(vendor_str, "0x15ad", 6) == 0) vendor_name = "VMware";
+            else if (strncmp(vendor_str, "0x1234", 6) == 0) vendor_name = "QEMU";
+            else if (strncmp(vendor_str, "0x1b36", 6) == 0) vendor_name = "Red Hat (QXL)";
+            else if (strncmp(vendor_str, "0x102b", 6) == 0) vendor_name = "Matrox";
+            else if (strncmp(vendor_str, "0x1414", 6) == 0) vendor_name = "Microsoft (Hyper-V)";
+            else if (strncmp(vendor_str, "0x1ab8", 6) == 0) vendor_name = "Parallels";
 
             char label_path[512], label_str[256] = {0};
             snprintf(label_path, sizeof(label_path), "/sys/bus/pci/devices/%s/label", dir->d_name);
@@ -648,10 +829,11 @@ void collect_mount_info(MountInfo *info) {
     while (fgets(line, sizeof(line), f)) {
         char device[256], mount_point[256], fs_type[64];
         if (sscanf(line, "%255s %255s %63s", device, mount_point, fs_type) == 3) {
-            // Filtrar para mostrar somente montagens de dispositivos físicos reais
+            // Filtrar para mostrar somente montagens de dispositivos físicos reais (ignora loop e snaps)
             if (strncmp(device, "/dev/", 5) != 0) continue;
+            if (strncmp(device, "/dev/loop", 9) == 0) continue;
 
-            const char *skip_fs[] = {"tmpfs", "devtmpfs", "sysfs", "proc", "devpts", "securityfs", "cgroup", "pstore", "debugfs", "hugetlbfs", "mqueue", "configfs", "fusectl", "overlay", NULL};
+            const char *skip_fs[] = {"tmpfs", "devtmpfs", "sysfs", "proc", "devpts", "securityfs", "cgroup", "pstore", "debugfs", "hugetlbfs", "mqueue", "configfs", "fusectl", "overlay", "squashfs", NULL};
             int skip = 0;
             for (int i = 0; skip_fs[i] != NULL; i++) {
                 if (strcmp(fs_type, skip_fs[i]) == 0) {
@@ -687,12 +869,17 @@ void collect_net_info(NetInfo *info) {
     DIR *d = opendir("/sys/class/net");
     if (!d) return;
 
+    NetEntry temp_all[128];
+    int temp_count = 0;
+    int temp_truncated = 0;
+
     struct dirent *dir;
     while ((dir = readdir(d)) != NULL) {
         if (dir->d_name[0] == '.') continue;
-        if (info->count >= MAX_NETS) { info->truncated = 1; break; }
+        if (temp_count >= 128) { temp_truncated = 1; break; }
 
-        NetEntry *net = &info->interfaces[info->count];
+        NetEntry *net = &temp_all[temp_count];
+        memset(net, 0, sizeof(*net));
         snprintf(net->name, sizeof(net->name), "%s", dir->d_name);
 
         /* MAC Address */
@@ -780,9 +967,30 @@ void collect_net_info(NetInfo *info) {
         net->ipv4[0] = '\0';
         net->ipv6[0] = '\0';
 
-        info->count++;
+        temp_count++;
     }
     closedir(d);
+
+    /* Prioriza interfaces físicas antes de interfaces virtuais */
+    for (int i = 0; i < temp_count; i++) {
+        if (!temp_all[i].is_virtual) {
+            if (info->count < MAX_NETS) {
+                info->interfaces[info->count++] = temp_all[i];
+            } else {
+                info->truncated = 1;
+            }
+        }
+    }
+    for (int i = 0; i < temp_count; i++) {
+        if (temp_all[i].is_virtual) {
+            if (info->count < MAX_NETS) {
+                info->interfaces[info->count++] = temp_all[i];
+            } else {
+                info->truncated = 1;
+            }
+        }
+    }
+    if (temp_truncated) info->truncated = 1;
 
     /* Coleta endereços IPv4 e IPv6 atribuídos para cada interface via getifaddrs */
     struct ifaddrs *ifaddr = NULL, *ifa = NULL;

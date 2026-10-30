@@ -64,7 +64,8 @@ void export_json(FILE *out,
     fprintf(out, "    \"uptime_seconds\": %ld,\n", sys->uptime_seconds);
     json_print_str(out, "uptime_formatted", sys->uptime_formatted, 1);
     json_print_str(out, "shell", sys->shell, 1);
-    json_print_str(out, "compiler", sys->compiler, 0);
+    json_print_str(out, "compiler", sys->compiler, 1);
+    json_print_str(out, "virtualization", sys->virtualization, 0);
     fprintf(out, "  },\n");
 
     /* 2. Identificação Única & Placa-Mãe */
@@ -95,6 +96,11 @@ void export_json(FILE *out,
     json_print_str(out, "cache_l1i", cpu->cache_l1i, 1);
     json_print_str(out, "cache_l2", cpu->cache_l2, 1);
     json_print_str(out, "cache_l3", cpu->cache_l3, 1);
+    if (cpu->temp_celsius > 0.0) {
+        fprintf(out, "    \"temp_celsius\": %.1f,\n", cpu->temp_celsius);
+    } else {
+        fprintf(out, "    \"temp_celsius\": null,\n");
+    }
     fprintf(out, "    \"usage_total_percent\": %.2f,\n", cpu->usage_total);
     fprintf(out, "    \"per_core_usage_percent\": [");
     for (int i = 0; i < cpu->num_cores_sampled; i++) {

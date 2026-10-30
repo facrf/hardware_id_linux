@@ -9,47 +9,52 @@ Possui **zero dependências externas** (não necessita de `libpci`, `libudev` ou
 ## 🚀 Funcionalidades
 
 - 🔑 **Identificação Única de Hardware (Hardware Fingerprint):**
-  - Geração de **Hash SHA-256 único** baseado na combinação de CPU, Placa-Mãe, Machine ID e MAC Address.
+  - Geração de **Hash SHA-256 único** baseado na combinação de CPU, Placa-Mãe, Machine ID e MACs de interfaces físicas.
   - Geração/Formatação de **Machine UUID** canônico (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+  - Saída direta instantânea para scripts com `--only-id` e `--uuid`.
   - Leitura do Machine ID do sistema (`/etc/machine-id` e `/var/lib/dbus/machine-id`).
-  - Extração de dados de **Placa-Mãe e BIOS (DMI/SMBIOS)**: Fabricante, Modelo da Placa, Fabricante/Modelo do Sistema e Versão/Data da BIOS/UEFI.
+  - Extração de dados de **Placa-Mãe e BIOS (DMI/SMBIOS)** com fallback automático para DeviceTree em arquiteturas ARM (ex.: Raspberry Pi).
 -  **Sistema Operacional & Ambiente:**
-  - Nome da Distribuição, Versão e Codename (via `/etc/os-release` com fallback automático para `/usr/lib/os-release`).
+  - **Detecção de Ambiente e Virtualização:** identifica se o sistema opera em Máquina Física (*Bare Metal*), Contêiner (Docker, Podman, LXC, Kubernetes) ou Máquina Virtual (KVM, VMware, VirtualBox, Hyper-V, WSL2, Xen, AWS EC2, GCP).
+  - Nome da Distribuição, Versão e Codename (via `/etc/os-release` com fallback para `/usr/lib/os-release`).
   - Versão do Kernel Linux e Arquitetura do processador (`uname`).
   - Hostname, Usuário logado, Tempo de atividade (*Uptime*) formatado, Shell e versão do Compilador.
 -  **Processador (CPU):**
   - Modelo comercial do processador.
+  - **Sensor de Temperatura:** monitoramento térmico em tempo real (°C) via `/sys/class/thermal` e `hwmon`.
   - Contagem de núcleos físicos e threads lógicos.
-  - Frequências de operação em tempo real (Atual, Mínima e Máxima em MHz, com fallback via `/proc/cpuinfo` para ambientes virtualizados ou instâncias cloud).
+  - Frequências de operação em tempo real (Atual, Mínima e Máxima em MHz, com fallback via `/proc/cpuinfo`).
   - Tamanhos de Cache L1d, L1i, L2 e L3.
-  - Utilização percentual total e **monitoramento individual por núcleo** com visualização responsiva para terminais de 80 ou mais colunas.
+  - Utilização percentual total e **monitoramento individual por núcleo** com visualização responsiva.
 -  **Memória RAM & Swap Inteligente:**
   - Métricas de RAM: Total, Usada, Livre, Disponível, Buffers e Cached.
-  - Status geral de Swap com percentual de uso.
+  - Formatação adaptativa com layout auto-ajustável para larguras de terminal padrão (80 colunas).
   - **Identificação de Dispositivos de Swap por Tipo:** Detecção automática de dispositivos `zram` (RAM compactada), `partition` (partição de swap) ou `file` (arquivo swap) com tamanho, uso e prioridade.
 -  **Placas de Vídeo (GPU):**
-  - Detecção via barramento PCI (NVIDIA, AMD/ATI, Intel, etc.).
-  - Nome do dispositivo, Driver de vídeo em uso e Slot PCI.
+  - Detecção via barramento PCI com suporte a classes de vídeo (`0x0300`, `0x0302`, `0x0380`).
+  - Suporte a GPUs físicas (NVIDIA, AMD/ATI, Intel, Matrox) e adaptadores virtualizados (VirtIO, VMware SVGA, QEMU, Red Hat QXL, Hyper-V).
 -  **Armazenamento:**
-  - **Dispositivos de Bloco Físicos:** Listagem de discos NVMe, SSDs e HDDs com modelo, tipo e capacidade (com filtro para não poluir com zram/loop).
-  - **Sistemas de Arquivos Montados:** Pontos de montagem reais, tipo de FS (`ext4`, `vfat`, `btrfs`, `xfs`), espaço ocupado/total e barra gráfica de uso.
+  - **Dispositivos de Bloco Físicos:** Listagem de discos NVMe, SSDs e HDDs com modelo, tipo e capacidade.
+  - **Sistemas de Arquivos Montados:** Pontos de montagem reais e barra gráfica de uso, com **filtro inteligente de `/dev/loop` e Snaps (`squashfs`)** para manter a visualização limpa.
 -  **Rede & Conectividade:**
-  - Interfaces físicas (Ethernet, Wi-Fi), loopback, pontes (Bridges) e virtuais.
+  - **Priorização de Interfaces Físicas:** interfaces Ethernet e Wi-Fi são coletadas prioritariamente antes de pontes e contêineres Docker, prevenindo perda de adaptadores físicos em ambientes com dezenas de veths.
   - Endereço MAC de cada interface.
   - **Resolução de Endereços IP:** Extração nativa de IPv4 (com máscara CIDR) e IPv6 via `getifaddrs`.
   - Driver do controlador de rede em uso e velocidade do link (Mbps).
-  - Agrupamento inteligente de interfaces virtuais (ex.: múltiplos containers Docker/veth).
 -  **Bluetooth:**
-  - Descoberta de controladores Bluetooth (`hci0`, etc.).
-  - Endereço MAC Bluetooth, tipo de barramento (USB, UART, SDIO), driver e fabricante.
+  - Descoberta de controladores Bluetooth (`hci0`, etc.), endereço MAC, barramento (USB, UART, SDIO) e fabricante.
 - 📄 **Exportação em JSON (`--json` / `-j`):**
-  - Saída completa em formato JSON válido e estruturado para integração em scripts de automação, auditoria de inventário ou sistemas de licenciamento.
+  - Saída completa em formato JSON válido e estruturado para automação, auditoria ou licenciamento.
+- 📺 **Modo Monitor Interativo (`--watch` / `-w`):**
+  - Dashboard em tempo real atualizando dinamicamente métricas de CPU, RAM e sistema a cada intervalo de segundos.
 
-## Privacidade e estabilidade do fingerprint
+---
+
+## 🛡️ Privacidade e Estabilidade do Fingerprint
 
 Por padrão, o programa oculta identificadores correlacionáveis na saída: fingerprint, UUID DMI, Machine ID, MACs, IPs e endereço Bluetooth. Use `--include-identifiers` somente quando a coleta estiver em um canal confiável.
 
-O fingerprint atual é `v2`: ele é derivado de dados de CPU/DMI e das MACs físicas ordenadas, sem incluir o `machine-id` da instalação. Assim, uma reinstalação do sistema não deve alterar o identificador. Ainda assim, IDs de hardware podem ser ausentes, alterados pelo firmware ou virtualizados; em contêineres e VMs o resultado pode refletir o host/hipervisor ou ser pouco distintivo.
+O fingerprint é derivado de dados de CPU/DMI e das MACs físicas ordenadas, sem incluir o `machine-id` da instalação, garantindo estabilidade mesmo após reinstalações do SO.
 
 ---
 
@@ -60,34 +65,28 @@ O fingerprint atual é `v2`: ele é derivado de dados de CPU/DMI e das MACs fís
 - GCC (ou Clang) com suporte a C11
 - GNU Make
 
-### 1. Compilação Otimizada (Release)
+### 1. Compilação Release
 ```bash
 make
 ```
 O executável binário `hardware_id` será gerado na raiz do projeto.
 
-### 2. Compilação para Depuração (Debug com AddressSanitizer)
-Para verificar vazamento de memória (*leaks*) ou corrupções de ponteiro:
+### 2. Compilação para Depuração (AddressSanitizer)
 ```bash
 make debug
 ```
 
-### 3. Limpeza
-```bash
-make clean
-```
-
-### 4. Testes
+### 3. Testes Automatizados
 ```bash
 make test
 ```
-Inclui vetores conhecidos de SHA-256, validação de JSON e comportamento da CLI.
+Executa a suíte de testes unitários de SHA-256, coletores, serialização JSON e validação de CLI.
 
-### 5. Instalação no Sistema (Opcional)
+### 4. Instalação no Sistema
 ```bash
 sudo make install
 ```
-Instala o binário em `/usr/local/bin/hardware_id`. Para empacotamento ou instalação em staging, use `make PREFIX=/usr DESTDIR=/caminho/de/staging install`. A remoção usa `make uninstall` com os mesmos valores de `PREFIX` e `DESTDIR`.
+Instala o binário em `/usr/local/bin/hardware_id` e a página de manual em `/usr/local/share/man/man1/hardware_id.1`.
 
 ---
 
@@ -98,26 +97,50 @@ Instala o binário em `/usr/local/bin/hardware_id`. Para empacotamento ou instal
 ./hardware_id
 ```
 
-### 2. Exportação em JSON
+### 2. Modo Monitor em Tempo Real (Dashboard)
 ```bash
+# Atualiza a cada 2 segundos (padrão)
+./hardware_id --watch
+
+# Ou com intervalo customizado de 1 segundo:
+./hardware_id -w 1
+```
+
+### 3. Extração Rápida para Scripts (Automação Shell)
+```bash
+# Retorna apenas o hash SHA-256 do hardware fingerprint:
+HWID=$(./hardware_id --only-id)
+
+# Retorna apenas o Machine UUID canônico:
+UUID=$(./hardware_id --uuid)
+```
+
+### 4. Modo Rápido (Skip de Amostragem de CPU)
+```bash
+# Executa em menos de 5ms pulando o sleep de 200ms da amostragem de CPU:
+./hardware_id --fast --json
+```
+
+### 5. Modo ASCII Clássico (Servidores e Terminais Legados)
+```bash
+./hardware_id --ascii
+```
+
+### 6. Exportação Estruturada em JSON
+```bash
+# JSON padrão com identificadores mascarados:
 ./hardware_id --json
-# ou de forma abreviada:
-./hardware_id -j
+
+# JSON completo com identificadores sensíveis:
+./hardware_id -j --include-identifiers
 ```
 
-Exemplo de uso com `jq` ou redirecionamento:
+Exemplo com `jq`:
 ```bash
-./hardware_id -j | jq .hardware_id
+./hardware_id -j | jq '{ambiente: .system.virtualization, cpu: .cpu.model, temp: .cpu.temp_celsius}'
 ```
 
-Para incluir identificadores sensíveis deliberadamente:
-```bash
-./hardware_id --json --include-identifiers
-```
-
-No modo visual, o layout adapta automaticamente a exibição de colunas à largura do terminal (com suporte responsivo a terminais padrão de 80 colunas e alinhamento visual preciso para caracteres acentuados UTF-8). As cores são ativadas apenas em terminal interativo. Use `--no-color` ou defina `NO_COLOR=1` para desativá-las explicitamente.
-
-### 3. Linha de Comando e Ajuda
+### 7. Ajuda Completa
 ```bash
 ./hardware_id --help
 ```
@@ -128,30 +151,31 @@ No modo visual, o layout adapta automaticamente a exibição de colunas à largu
 
 ```text
 hardware_id/
-├── Makefile             # Automação de compilação (Release, Debug/ASan, Clean, Install)
+├── Makefile             # Automação de compilação, testes e instalação
 ├── README.md            # Documentação técnica e guia do usuário
 ├── AGENTS.md            # Regras e limites de escopo do projeto
-└── src/
-    ├── main.c           # Ponto de entrada, tratamento de flags de linha de comando
-    ├── collectors.h     # Definição das estruturas de dados e protótipos de coleta
-    ├── collectors.c     # Extração de dados de /sys, /proc, DMI, rede e POSIX
-    ├── display.h        # Protótipos de renderização de interface de terminal
-    ├── display.c        # Formatação de caixas Unicode, cores ANSI e barras de progresso
-    ├── sha256.h         # Header do algoritmo de hash SHA-256
-    ├── sha256.c         # Implementação C11 pura do SHA-256 para Hardware Fingerprint
-    ├── json_export.h    # Header para serialização JSON
-    ├── json_export.c    # Serializador completo de todas as structs em JSON válido
-    └── colors.h         # Definições de cores e formatações ANSI
+├── completions/
+│   └── hardware_id.bash # Autocompletion para bash
+├── docs/
+│   └── hardware_id.1    # Página de manual (man page)
+├── src/
+│   ├── main.c           # Ponto de entrada, flags de linha de comando e modo watch
+│   ├── collectors.h     # Definição das estruturas de dados e protótipos de coleta
+│   ├── collectors.c     # Extração de /sys, /proc, DMI, rede, thermal e POSIX
+│   ├── display.h        # Protótipos de renderização de terminal
+│   ├── display.c        # Caixas Unicode/ASCII, cores ANSI e layout responsivo
+│   ├── sha256.h         # Header do algoritmo de hash SHA-256
+│   ├── sha256.c         # Implementação C11 pura do SHA-256
+│   ├── json_export.h    # Header para serialização JSON
+│   ├── json_export.c    # Serializador completo em JSON válido
+│   ├── colors.h         # Definições de cores ANSI
+│   └── version.h        # Definição da versão do projeto
+└── tests/
+    ├── test_cli.sh      # Testes de integração de CLI e flags
+    ├── test_collectors.c# Testes dos utilitários de coleta
+    ├── test_json.c      # Testes de serialização JSON
+    └── test_sha256.c    # Testes com vetores oficiais SHA-256
 ```
-
----
-
-## 🛡️ Segurança e Privilégios
-
-- **Execução Sem Root (Modo Padrão):**
-  - O programa foi projetado para funcionar perfeitamente com usuários não-privilegiados. Caso arquivos protegidos (como o UUID DMI nativo `/sys/class/dmi/id/product_uuid`) não estejam legíveis, o coletor realiza um *fallback* gracioso sintetizando o UUID a partir da combinação criptográfica dos identificadores públicos disponíveis.
-- **Execução com Root (`sudo`):**
-  - Com privilégios de administrador, o utilitário tem acesso direto aos números de série reais de chassi, placa-mãe e UUID de fábrica.
 
 ---
 

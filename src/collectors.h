@@ -16,7 +16,7 @@
 #define MAX_DISKS   32
 #define MAX_MOUNTS  64
 #define MAX_SWAPS   16
-#define MAX_NETS    32
+#define MAX_NETS    64
 #define MAX_BT      16
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -36,6 +36,7 @@ typedef struct {
     char uptime_formatted[64];
     char shell[128];
     char compiler[128];
+    char virtualization[64];   /* Máquina Física, Docker, KVM, VMware, etc. */
 } SysInfo;
 
 /* ─── Informações de Identificação Única e Placa-Mãe (DMI/SMBIOS) ─── */
@@ -71,6 +72,7 @@ typedef struct {
     double usage_per_core[MAX_CORES];
     int  num_cores_sampled;
     int  cores_truncated;
+    double temp_celsius;       /* Temperatura do pacote/CPU em °C (-1.0 se indisponível) */
 } CpuInfo;
 
 /* ─── Entrada de dispositivo Swap individual ─── */
@@ -187,6 +189,7 @@ typedef struct {
 void collect_system_info(SysInfo *info);
 void collect_hardware_id_info(HardwareIdInfo *info, const CpuInfo *cpu, const NetInfo *net);
 void collect_cpu_info(CpuInfo *info);
+void collect_cpu_info_ex(CpuInfo *info, int fast_mode);
 void collect_memory_info(MemInfo *info);
 void collect_gpu_info(GpuInfo *info);
 void collect_disk_info(DiskInfo *info);

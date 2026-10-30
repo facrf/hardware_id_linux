@@ -1,0 +1,80 @@
+.TH HARDWARE_ID 1 "Outubro 2026" "hardware_id v1.2.0" "Manual do Usuário"
+.SH NOME
+hardware_id \- Inspetor de Hardware & Gerador de Hardware Fingerprint para Linux
+
+.SH SINOPSE
+.B hardware_id
+[\fIOPÇÃO\fR]...
+
+.SH DESCRIÇÃO
+O \fBhardware_id\fR é um utilitário de alto desempenho em C (C11/POSIX) para Linux com zero dependências externas.
+Ele inspeciona a fundo componentes de hardware, placa-mãe, DMI/SMBIOS, conectividade (Ethernet, Wi-Fi, Bluetooth) e gera uma impressão digital criptográfica única (Hardware Fingerprint) e Machine UUID baseada nos componentes físicos da máquina.
+
+.SH OPÇÕES DE SAÍDA
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+Exporta todos os dados coletados em formato JSON estruturado na saída padrão.
+.TP
+\fB\-s\fR, \fB\-\-only\-id\fR
+Exibe apenas o hash criptográfico SHA-256 do Hardware Fingerprint cru (sem cores, sem formatação TUI ou JSON) e encerra imediatamente. Ideal para scripts shell.
+.TP
+\fB\-\-uuid\fR
+Exibe apenas o Machine UUID canônico formatado (\fIxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\fR) e encerra imediatamente.
+.TP
+\fB\-f\fR, \fB\-\-fast\fR
+Modo rápido: pula a amostragem de 200ms de uso de CPU, tornando a execução quase instantânea (< 5ms).
+.TP
+\fB\-w\fR, \fB\-\-watch\fR [\fISEGUNDOS\fR]
+Executa em modo monitor interativo contínuo (dashboard), atualizando métricas dinâmicas como uso de CPU, memória e montagens a cada intervalo definido (padrão: 2 segundos). Pressione Ctrl+C para sair.
+
+.SH OPÇÕES VISUAIS E DE PRIVACIDADE
+.TP
+\fB\-\-include\-identifiers\fR
+Inclui identificadores sensíveis e correlacionáveis na saída (Hardware ID, UUID DMI, Machine ID, endereços MAC, IPs e Bluetooth).
+.TP
+\fB\-\-redact\fR
+Oculta identificadores sensíveis substituindo-os por \fI<redacted>\fR (comportamento padrão).
+.TP
+\fB\-\-ascii\fR
+Usa caracteres ASCII clássicos (\fI+\fR, \fI-\fR, \fI|\fR) para as caixas e barras de progresso, evitando glifos Unicode.
+.TP
+\fB\-\-no\-color\fR
+Desativa sequências de escape ANSI de cores. Também respeita a variável de ambiente \fBNO_COLOR\fR.
+
+.SH INFORMAÇÕES
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Exibe a ajuda do programa e sai.
+.TP
+\fB\-v\fR, \fB\-\-version\fR
+Exibe a versão do programa e sai.
+
+.SH EXEMPLOS
+.TP
+Visualizar informações completas no terminal:
+.B hardware_id
+.TP
+Obter apenas o Hardware ID para automação:
+.B HWID=$(hardware_id --only-id)
+.TP
+Exportar JSON com identificadores completos para processamento com jq:
+.B hardware_id -j --include-identifiers | jq .hardware_id
+.TP
+Executar em servidores antigos ou terminais seriais:
+.B hardware_id --ascii --no-color
+.TP
+Monitorar sistema continuamente a cada 1 segundo:
+.B hardware_id --watch 1
+
+.SH CÓDIGO DE RETORNO
+.TP
+.B 0
+Sucesso.
+.TP
+.B 2
+Opção desconhecida ou erro de argumentos.
+
+.SH VEJA TAMBÉM
+.BR uname (1),
+.BR lshw (1),
+.BR dmidecode (8)

@@ -26,6 +26,7 @@ void display_footer(int width);
 /* Retorna a largura atual do terminal (fallback: 80 colunas) */
 int  get_terminal_width(void);
 void set_color_enabled(int enabled);
+void set_ascii_mode(int enabled);
 
 /* Desenha a borda superior de um painel com título */
 void draw_box_top(const char *title, int width);
@@ -51,5 +52,6 @@ void draw_progress_bar(const char *label, double percent, int width);
  *   >= 85% → vermelho
  */
 const char *usage_color(double percent);
+const char *temp_color(double temp);
 
 #endif /* DISPLAY_H */

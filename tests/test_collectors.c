@@ -21,6 +21,17 @@ int main(void) {
     format_kb(1024ULL, buf, sizeof(buf));
     assert(strcmp(buf, "1.00 MiB") == 0);
 
-    puts("Collector utilities: OK");
+    // Teste de fast mode no CPU collector
+    CpuInfo cpu;
+    collect_cpu_info_ex(&cpu, 1);
+    assert(cpu.usage_total == 0.0);
+    assert(cpu.num_cores_sampled == 0);
+
+    // Teste de SysInfo com detecção de virtualização
+    SysInfo sys;
+    collect_system_info(&sys);
+    assert(strlen(sys.virtualization) > 0);
+
+    puts("Collector utilities & fast mode: OK");
     return 0;
 }
